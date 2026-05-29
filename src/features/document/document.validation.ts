@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const ALLOWED_TYPES = ["txt", "md", "csv", "xlsx", "docx", "pdf"] as const;
+const ALLOWED_TYPES = ["txt", "md", "csv", "xlsx", "docx", "pdf", "png", "jpg", "jpeg", "webp", "bmp"] as const;
 
 export const documentListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -14,7 +14,7 @@ export const documentIdSchema = z.object({
 
 export const uploadFileSchema = z.object({
   fileName: z.string().min(1),
-  fileSize: z.number().int().positive().max(10 * 1024 * 1024, "文件不能超过10MB"),
+  fileSize: z.number().int().positive().max(100 * 1024 * 1024, "文件不能超过100MB"),
   fileType: z.enum(ALLOWED_TYPES, {
     message: "不支持的文件类型",
   }),
