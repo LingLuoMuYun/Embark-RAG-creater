@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:\\\\Users\\\\16037\\\\Downloads\\\\rag-creater-main\\\\rag-creater-main\" && mkdir -p \"src/app/api/ai/extract/from-text\" \"src/app/api/ai/extract/from-document\" \"src/app/api/ai/extract/retry\" \"src/app/api/knowledge/candidates/[id]\" \"src/app/api/knowledge/candidates/confirm\")",
+      "Bash(cmd //c \"taskkill /F /IM node.exe\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\16037\\Downloads\\rag-creater-main\\rag-creater-main\\src\\app\\api\\knowledge\\candidates"
+    ]
+  }
+}
