@@ -8,6 +8,7 @@
   id: string;                 //主键UUID
   name: string;             // 知识库名称
   description: string;     // 知识库描述
+  icon: string;             // 图标
   chunkSize:number;        //切片尺寸
   status: "active" | "disabled"; // 是否启用
   similarityThreshold:number ;   //相似度阈值

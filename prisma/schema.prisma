@@ -11,7 +11,7 @@ model KnowledgeBase {
   id          String  @id @default(cuid())
   name        String  @unique
   description String?
-
+  icon        String?  @default("")
   // 知识库处理配置
   chunkSize           Int   @default(800)
   chunkOverlap        Int   @default(100)
