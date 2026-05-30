@@ -8,6 +8,7 @@ import { searchByExactTerms } from "@/server/services/rag/exact-term";
 import { fuseByRrf } from "@/server/services/rag/hybrid";
 import { selectByMmr } from "@/server/services/rag/mmr";
 import { processQuery } from "@/server/services/rag/query-processor";
+import { rerankByRules } from "@/server/services/rag/rules-reranker";
 import { searchByVector } from "@/server/services/rag/vector-store";
 import type {
   KnowledgeChunk,
@@ -24,8 +25,9 @@ import type {
  * 2. 对用户问题做规则化 rewrite / expansion。
  * 3. 针对多条 retrieval query 执行向量、BM25 和精确词检索。
  * 4. 使用 RRF 融合多路召回结果。
- * 5. 使用 MMR 从融合候选中选择更少冗余的 anchor chunk。
- * 6. 按 mode 补充邻近 chunk 后交给 context-builder 组装响应。
+ * 5. 使用规则精排提升标题、摘要、来源和意图匹配结果。
+ * 6. 使用 MMR 从融合候选中选择更少冗余的 anchor chunk。
+ * 7. 按 mode 补充邻近 chunk 后交给 context-builder 组装响应。
  */
 export async function retrieveRagContexts(
   request: RagRetrieveRequest
@@ -58,7 +60,8 @@ export async function retrieveRagContexts(
     }
   );
   const fusedChunks = fuseByRrf(resultGroups);
-  const anchorChunks = selectByMmr(fusedChunks, topK);
+  const rerankedChunks = rerankByRules(fusedChunks, processedQuery, mode);
+  const anchorChunks = selectByMmr(rerankedChunks, topK);
   const scoredChunks = expandWithAdjacentChunks(
     anchorChunks,
     scopedChunks,
