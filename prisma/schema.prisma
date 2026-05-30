@@ -110,3 +110,40 @@ model DocumentChunk {
   @@index([documentSourceId])
   @@index([documentSourceId, chunkIndex])
 }
+
+model ExpertAgent {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  /// Answer style key, for example: strict, concise, teaching, support.
+  answerStyle String @default("strict")
+
+  /// JSON string for flexible scope configuration before retrieval tables settle.
+  /// Expected shape can map to RagRetrieveRequest.scope:
+  /// {
+  ///   "mode": "all" | "knowledgeBases" | "categories" | "tags" | "knowledgeItems",
+  ///   "knowledgeBaseIds": string[],
+  ///   "categoryIds": string[],
+  ///   "tagIds": string[],
+  ///   "knowledgeIds": string[],
+  ///   "chunkTypes": string[]
+  /// }
+  knowledgeScope String @default("{}")
+
+  showReferences        Boolean @default(true)
+  allowKnowledgeCapture Boolean @default(false)
+
+  /// Agent lifecycle status. Keep as String to avoid enum churn in team integration.
+  /// Suggested values: draft, active, disabled.
+  status String @default("draft")
+
+  systemPrompt String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([answerStyle])
+  @@index([createdAt])
+}
