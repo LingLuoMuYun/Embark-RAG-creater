@@ -3,9 +3,9 @@ import jschardet from "jschardet";
 import iconv from "iconv-lite";
 import * as XLSX from "xlsx";
 
-const ALLOWED_TYPES = ["txt", "md", "csv", "xlsx", "docx", "pdf"] as const;
+const ALLOWED_TYPES = ["txt", "md", "csv", "xlsx", "docx", "pdf", "png", "jpg", "jpeg", "webp", "bmp"] as const;
 export type AllowedFileType = (typeof ALLOWED_TYPES)[number];
-export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+export const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 const ENCODING_FALLBACKS = ["GBK", "GB2312", "BIG5", "SHIFT_JIS"];
 
@@ -102,6 +102,21 @@ export async function parseFileContent(
       const textResult = await parser.getText();
       await parser.destroy();
       return textResult.text;
+    }
+
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "webp":
+    case "bmp": {
+      const { createWorker } = await import("tesseract.js");
+      const worker = await createWorker("chi_sim+eng");
+      try {
+        const { data } = await worker.recognize(buffer);
+        return data.text;
+      } finally {
+        await worker.terminate();
+      }
     }
 
     default:
