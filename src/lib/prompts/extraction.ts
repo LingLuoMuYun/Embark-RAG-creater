@@ -61,3 +61,21 @@ export function renderChunkUserPrompt(
   const contextualizedText = `[文档: ${docName}] [第 ${chunkIndex + 1}/${totalChunks} 段]\n\n${chunkContent}`;
   return renderUserPrompt(contextualizedText);
 }
+
+// ── 语义分段 ──────────────────────────────────────────
+
+export const SECTION_MARKER_SYSTEM_PROMPT = `你是一个文档结构分析助手。你的任务是在文本的**话题发生明显变化**的位置插入 ---SECTION--- 标记。
+
+规则：
+1. 在话题、主题、讨论对象发生明显改变的位置插入 ---SECTION---（独占一行）
+2. 不要修改原文任何内容，不要删减、改写、总结
+3. 不要插入额外的解释、评论或 markdown 标题
+4. 如果全文话题连贯没有明显变化，可以不插入任何标记
+5. 表格内容（| ... | 格式的行）属于同一个话题，不要在表格中间插入标记
+6. 插入的 ---SECTION--- 数量不要超过 20 个
+
+直接返回带标记的文本，不要加任何前缀或后缀说明。`;
+
+export function renderSectionMarkerUserPrompt(text: string): string {
+  return `请为以下文本插入话题分割标记：\n\n---\n${text}\n---`;
+}

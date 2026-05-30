@@ -36,12 +36,19 @@ const statusBadge: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700", confirmed: "bg-green-100 text-green-700",
 };
 
-type Tab = "text" | "knowledge";
+interface ChunkItem {
+  id: string;
+  chunkIndex: number;
+  content: string;
+}
+
+type Tab = "text" | "segments" | "knowledge";
 
 export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
   const [tab, setTab] = useState<Tab>("text");
   const [docInfo, setDocInfo] = useState<DocInfo | null>(null);
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
+  const [chunks, setChunks] = useState<ChunkItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<CandidateItem | null>(null);
@@ -53,9 +60,10 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
     setLoading(true);
     setError(null);
     try {
-      const [docRes, candRes] = await Promise.all([
+      const [docRes, candRes, chunkRes] = await Promise.all([
         fetch(`/api/documents/${id}`),
         fetch(`/api/knowledge/candidates?documentSourceId=${id}`),
+        fetch(`/api/documents/${id}/chunks`),
       ]);
       const docData = await docRes.json();
       if (docData.success) {
@@ -65,6 +73,10 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
       const candData = await candRes.json();
       if (candData.success) {
         setCandidates(candData.data.candidates);
+      }
+      const chunkData = await chunkRes.json();
+      if (chunkData.success) {
+        setChunks(chunkData.data);
       }
     } catch {
       setError("加载失败");
@@ -168,6 +180,7 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
         <div className="flex border-b border-zinc-200">
           {([
             { key: "text" as Tab, label: "原文内容" },
+            { key: "segments" as Tab, label: `语义分段${chunks.length > 0 ? `（${chunks.length}）` : ""}` },
             { key: "knowledge" as Tab, label: `提炼知识${candidates.length > 0 ? `（${candidates.length}）` : ""}` },
           ]).map((t) => (
             <button
@@ -222,6 +235,38 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
                 </div>
               )}
             </div>
+          ) : tab === "segments" ? (
+            /* ── 语义分段 ── */
+            chunks.length === 0 ? (
+              <div className="py-16 text-center text-sm text-zinc-400">
+                {docInfo?.status === "uploaded"
+                  ? "文档尚未解析"
+                  : docInfo?.status === "parsing"
+                    ? "正在解析中..."
+                    : "暂无分段数据"}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {chunks.map((chunk, i) => (
+                  <div
+                    key={chunk.id}
+                    className="rounded-lg border border-zinc-200 bg-zinc-50"
+                  >
+                    <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5">
+                      <span className="text-xs font-medium text-zinc-500">
+                        第 {i + 1} 段
+                      </span>
+                      <span className="text-xs text-zinc-400">
+                        {chunk.content.length.toLocaleString()} 字
+                      </span>
+                    </div>
+                    <pre className="whitespace-pre-wrap break-words px-3 py-3 text-sm leading-relaxed text-gray-700">
+                      {chunk.content}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
             /* ── 提炼知识 ── */
             candidates.length === 0 ? (

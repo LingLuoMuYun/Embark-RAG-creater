@@ -11,7 +11,11 @@
       "Bash(git stash *)",
       "Bash(npm install *)",
       "WebSearch",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(cd /d E:\\\\D\\\\document\\\\工程营\\\\rag-creater)",
+      "Bash(node scripts/test-semantic-split.mjs)",
+      "Bash(node *)"
     ]
   }
 }

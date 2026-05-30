@@ -317,3 +317,101 @@ function extractOverlap(text: string, size: number): string {
 
   return snippet + "\n\n";
 }
+
+// ── LLM 语义分段 ──────────────────────────────────────
+
+const SECTION_MARKER = "---SECTION---";
+
+/**
+ * 用 LLM 分析全文，在话题边界插入 ---SECTION--- 标记后按标记切分。
+ * 失败时返回 null，调用方应退回机械切分。
+ */
+export async function splitTextByLLM(
+  text: string,
+  maxChunkSize: number
+): Promise<TextChunk[] | null> {
+  try {
+    const { chatWithLLM } = await import("@/lib/ai-extract");
+    const {
+      SECTION_MARKER_SYSTEM_PROMPT,
+      renderSectionMarkerUserPrompt,
+    } = await import("@/lib/prompts/extraction");
+
+    const result = await chatWithLLM(
+      SECTION_MARKER_SYSTEM_PROMPT,
+      renderSectionMarkerUserPrompt(text),
+      { temperature: 0.1, maxTokens: 8192 }
+    );
+
+    // 按标记切分
+    const sections = result.split(SECTION_MARKER);
+    if (sections.length <= 1) return null; // LLM 没插入标记，退回
+
+    // 每段再按长度递归切分 + 表格感知
+    const paragraphs = parseSectionsToParagraphs(sections);
+    return mergeParagraphsToChunks(paragraphs, maxChunkSize);
+  } catch {
+    return null; // 任何异常都退回机械切分
+  }
+}
+
+function parseSectionsToParagraphs(
+  sections: string[]
+): { content: string; charStart: number }[] {
+  const result: { content: string; charStart: number }[] = [];
+  let offset = 0;
+
+  for (const section of sections) {
+    const trimmed = section.trim();
+    if (!trimmed) {
+      offset += section.length + SECTION_MARKER.length;
+      continue;
+    }
+
+    // 对每个 section 内部做段落切分 + 表格合并
+    const paras = splitParagraphs(trimmed);
+    for (const p of paras) {
+      result.push({ content: p.content, charStart: offset + p.charStart });
+    }
+    offset += section.length + SECTION_MARKER.length;
+  }
+
+  return result;
+}
+
+function mergeParagraphsToChunks(
+  paragraphs: { content: string; charStart: number }[],
+  maxSize: number
+): TextChunk[] {
+  const chunks: TextChunk[] = [];
+  let currentContent = "";
+  let currentStart = 0;
+
+  for (const para of paragraphs) {
+    if (currentContent.length + para.content.length > maxSize && currentContent.length > 0) {
+      chunks.push({
+        content: currentContent.trimEnd(),
+        charStart: currentStart,
+        charEnd: para.charStart,
+      });
+
+      const overlapText = extractOverlap(currentContent, 100);
+      currentContent = overlapText + para.content;
+      currentStart = para.charStart - overlapText.length;
+      continue;
+    }
+
+    if (!currentContent) currentStart = para.charStart;
+    currentContent += para.content;
+  }
+
+  if (currentContent.trim()) {
+    chunks.push({
+      content: currentContent.trimEnd(),
+      charStart: currentStart,
+      charEnd: Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  return chunks;
+}

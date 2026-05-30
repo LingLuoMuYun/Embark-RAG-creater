@@ -1,3 +1,4 @@
+import path from "node:path";
 import mammoth from "mammoth";
 import jschardet from "jschardet";
 import iconv from "iconv-lite";
@@ -297,7 +298,11 @@ export async function parseFileContent(
     case "webp":
     case "bmp": {
       const { createWorker } = await import("tesseract.js");
-      const worker = await createWorker("chi_sim+eng");
+      const traineddataDir = path.join(process.cwd(), "tessdata");
+      const worker = await createWorker("chi_sim+eng", 3, {
+        langPath: traineddataDir,
+        gzip: false,
+      });
       try {
         const { data } = await worker.recognize(buffer);
         return data.text;

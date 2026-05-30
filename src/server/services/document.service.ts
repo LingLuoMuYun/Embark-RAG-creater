@@ -11,6 +11,7 @@ import {
   MAX_FILE_SIZE,
 } from "@/lib/file-parser";
 import { splitTextIntoChunks } from "@/lib/text-splitter";
+import { splitTextSemantic } from "@/lib/semantic-splitter";
 import type { TextChunk } from "@/lib/text-splitter";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
@@ -168,8 +169,9 @@ export async function parseDocument(id: string): Promise<{
 
     const content = await parseFileContent(buffer, doc.fileType);
 
-    // Split content into chunks
-    const chunks = splitTextIntoChunks(content);
+    // 向量化语义分段优先，失败退回机械切分
+    const semanticChunks = await splitTextSemantic(content);
+    const chunks = semanticChunks ?? splitTextIntoChunks(content);
 
     // Delete old chunks and create new ones in a transaction
     await prisma.$transaction(async (tx) => {

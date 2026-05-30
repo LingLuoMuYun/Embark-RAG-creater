@@ -86,13 +86,15 @@ function tryParseJSON(raw: string): unknown | undefined {
 
 // ===== LLM 调用 =====
 
-async function callLLM(text: string): Promise<unknown> {
+/** 通用 LLM chat 调用，传入 system + user prompt，返回文本响应 */
+export async function chatWithLLM(
+  systemPrompt: string,
+  userPrompt: string,
+  options?: { temperature?: number; maxTokens?: number }
+): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
-  const baseUrl =
-    process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-
-  const userPrompt = renderUserPrompt(text);
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -103,11 +105,11 @@ async function callLLM(text: string): Promise<unknown> {
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      temperature: 0.3,
-      max_tokens: 4096,
+      temperature: options?.temperature ?? 0.3,
+      max_tokens: options?.maxTokens ?? 4096,
     }),
   });
 
@@ -121,6 +123,12 @@ async function callLLM(text: string): Promise<unknown> {
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error("LLM returned empty response");
+  return content;
+}
+
+async function callLLM(text: string): Promise<unknown> {
+  const userPrompt = renderUserPrompt(text);
+  const content = await chatWithLLM(EXTRACTION_SYSTEM_PROMPT, userPrompt);
 
   let jsonStr = content;
 
