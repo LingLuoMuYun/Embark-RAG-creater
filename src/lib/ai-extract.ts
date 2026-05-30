@@ -126,6 +126,56 @@ export async function chatWithLLM(
   return content;
 }
 
+/** 多模态调用：传入图片 base64 + prompt，返回文本描述 */
+export async function chatWithVision(
+  imageBuffer: Buffer,
+  mimeType: string,
+  prompt: string,
+  options?: { temperature?: number; maxTokens?: number }
+): Promise<string> {
+  const apiKey = process.env.VISION_API_KEY || process.env.OPENAI_API_KEY;
+  const baseUrl = process.env.VISION_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const model = process.env.VISION_MODEL || "mimo-v2.5";
+  const base64 = imageBuffer.toString("base64");
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            {
+              type: "image_url",
+              image_url: { url: `data:${mimeType};base64,${base64}` },
+            },
+          ],
+        },
+      ],
+      temperature: options?.temperature ?? 0.3,
+      max_tokens: options?.maxTokens ?? 2048,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(
+      `Vision API error: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 200)}` : ""}`
+    );
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Vision model returned empty response");
+  return content;
+}
+
 async function callLLM(text: string): Promise<unknown> {
   const userPrompt = renderUserPrompt(text);
   const content = await chatWithLLM(EXTRACTION_SYSTEM_PROMPT, userPrompt);

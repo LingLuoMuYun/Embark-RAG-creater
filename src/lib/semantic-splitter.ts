@@ -71,8 +71,10 @@ export async function splitTextSemantic(
 }
 
 function splitSentences(text: string): string[] {
-  // 按常见句末标点切分，保留标点
-  const raw = text.split(/(?<=[。！？.!?\n])\s*/);
+  // 句末标点切分：中文标点直接切，英文 .!? 需非数字前导（避免 1. 2. 序号被误切）
+  const raw = text.split(
+    /(?<=[。！？\n])\s*|(?<!\d)(?<=[.!?])\s+(?=[A-Z一-鿿])/u
+  );
   return raw
     .map((s) => s.trim())
     .filter((s) => s.length > 0);

@@ -15,7 +15,9 @@
       "Bash(git commit *)",
       "Bash(cd /d E:\\\\D\\\\document\\\\工程营\\\\rag-creater)",
       "Bash(node scripts/test-semantic-split.mjs)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(git rm *)",
+      "Bash(npm uninstall *)"
     ]
   }
 }

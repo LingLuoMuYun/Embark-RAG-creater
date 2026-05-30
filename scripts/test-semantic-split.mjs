@@ -96,7 +96,9 @@ try {
 // ── helper functions (复刻 semantic-splitter & embedding 逻辑) ──
 
 function splitSentences(text) {
-  const raw = text.split(/(?<=[。！？.!?\n])\s*/);
+  const raw = text.split(
+    /(?<=[。！？\n])\s*|(?<!\d)(?<=[.!?])\s+(?=[A-Z一-鿿])/
+  );
   return raw.map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
