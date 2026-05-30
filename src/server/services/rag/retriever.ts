@@ -43,24 +43,26 @@ export async function retrieveRagContexts(
   const topK = getTopK(mode);
   const candidateLimit = topK * RAG_CONFIG.candidateMultiplier;
   const processedQuery = await processQueryWithRewrite(request.query);
-  const resultGroups = processedQuery.retrievalQueries.flatMap(
-    (retrievalQuery) => {
-      const queryVector = embedQuery(retrievalQuery);
-      const vectorResults = searchByVector(scopedChunks, queryVector)
-        .filter((item) => item.score >= RAG_CONFIG.vectorMinScore)
-        .slice(0, candidateLimit);
-      const bm25Results = searchByBm25(scopedChunks, retrievalQuery).slice(
-        0,
-        candidateLimit
-      );
-      const exactTermResults = searchByExactTerms(
-        scopedChunks,
-        retrievalQuery
-      ).slice(0, candidateLimit);
+  const resultGroups = (
+    await Promise.all(
+      processedQuery.retrievalQueries.map(async (retrievalQuery) => {
+        const queryVector = embedQuery(retrievalQuery);
+        const vectorResults = (await searchByVector(scopedChunks, queryVector))
+          .filter((item) => item.score >= RAG_CONFIG.vectorMinScore)
+          .slice(0, candidateLimit);
+        const bm25Results = searchByBm25(scopedChunks, retrievalQuery).slice(
+          0,
+          candidateLimit
+        );
+        const exactTermResults = searchByExactTerms(
+          scopedChunks,
+          retrievalQuery
+        ).slice(0, candidateLimit);
 
-      return [vectorResults, bm25Results, exactTermResults];
-    }
-  );
+        return [vectorResults, bm25Results, exactTermResults];
+      })
+    )
+  ).flat();
   const fusedChunks = fuseByRrf(resultGroups);
   const rerankedChunks = rerankByRules(fusedChunks, processedQuery, mode);
   const thresholdResult = applyMinScoreThreshold(rerankedChunks);

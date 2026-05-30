@@ -2,6 +2,8 @@ import type { KnowledgeChunk } from "@/features/rag/types";
 
 const MOCK_EMBEDDING_DIMENSION = 64;
 
+export const MOCK_EMBEDDING_MODEL = "mock-hash-embedding-v1";
+
 /**
  * embedding 生成模块。
  *
@@ -28,17 +30,21 @@ export function embedQuery(query: string): EmbeddingVector {
  * 初版把标题、摘要、正文和 metadata 合成索引文本，标题和摘要重复一次提高权重。
  */
 export function embedChunk(chunk: KnowledgeChunk): EmbeddingVector {
+  return embedText(getChunkEmbeddingText(chunk));
+}
+
+/** 构建 chunk embedding 使用的稳定文本输入。 */
+export function getChunkEmbeddingText(chunk: KnowledgeChunk): string {
   const metadataText = chunk.metadata ? JSON.stringify(chunk.metadata) : "";
-  return embedText(
-    [
-      chunk.title,
-      chunk.title,
-      chunk.summary ?? "",
-      chunk.summary ?? "",
-      chunk.content,
-      metadataText,
-    ].join("\n")
-  );
+
+  return [
+    chunk.title,
+    chunk.title,
+    chunk.summary ?? "",
+    chunk.summary ?? "",
+    chunk.content,
+    metadataText,
+  ].join("\n");
 }
 
 /** 将任意文本转换成固定维度的 mock embedding 向量。 */

@@ -1,4 +1,5 @@
-import { embedChunk, type EmbeddingVector } from "@/server/services/rag/embedding";
+import type { EmbeddingVector } from "@/server/services/rag/embedding";
+import { getOrIndexChunkEmbedding } from "@/server/services/rag/vector-index-repository";
 import type { KnowledgeChunk } from "@/features/rag/types";
 
 /**
@@ -42,20 +43,29 @@ export function cosineSimilarity(
 /**
  * 在内存中执行向量检索。
  *
- * 当前会现场为每个 chunk 生成 mock embedding；
- * 后续换成真实向量数据库时，保持输入输出结构不变即可。
+ * 当前优先读取本地 embedding 索引；
+ * 当索引缺失或内容过期时，会用 mock embedding 重建并写回索引。
  */
-export function searchByVector(
+export async function searchByVector(
   chunks: KnowledgeChunk[],
   queryVector: EmbeddingVector
-): VectorSearchResult[] {
-  return chunks
-    .map((chunk) => ({
+): Promise<VectorSearchResult[]> {
+  const scoredResults = await Promise.all(
+    chunks.map(async (chunk) => ({
       chunk,
       score: Number(
-        Math.max(0, cosineSimilarity(queryVector, embedChunk(chunk))).toFixed(4)
+        Math.max(
+          0,
+          cosineSimilarity(
+            queryVector,
+            (await getOrIndexChunkEmbedding(chunk)).embedding
+          )
+        ).toFixed(4)
       ),
     }))
+  );
+
+  return scoredResults
     .sort((a, b) => b.score - a.score)
     .map((result, index) => ({
       ...result,

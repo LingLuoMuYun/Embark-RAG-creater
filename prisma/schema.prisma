@@ -81,6 +81,20 @@ model KnowledgeChunk {
   @@index([knowledgeBaseId, status])
 }
 
+model ChunkEmbedding {
+  chunkId        String @id
+  embedding      String
+  embeddingModel String
+  contentHash    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([embeddingModel])
+  @@index([contentHash])
+  @@index([updatedAt])
+}
+
 model DocumentSource {
   id           String          @id @default(cuid())
   originalName String
