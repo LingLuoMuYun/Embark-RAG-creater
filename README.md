@@ -192,3 +192,18 @@ src/app/projects/[id]/page.tsx
 /projects/1
 /projects/abc
 ```
+
+## 数据库的修改
+
+```
+# 1. 修改 prisma/schema.prisma
+
+# 2. 创建并执行数据库迁移
+npx prisma migrate dev --name 本次修改的名字
+
+# 3. 重新生成 Prisma Client
+npx prisma generate
+
+# 4. 重启 Next.js 开发服务
+npm run dev
+```
