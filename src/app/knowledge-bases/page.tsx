@@ -1,19 +1,10 @@
 import { AdminShell } from "@/components/layout/admin-shell";
+import { KnowledgeBaseManagement } from "@/features/knowledge-bases/knowledge-base-management";
 
 export default function KnowledgeBasesPage() {
   return (
     <AdminShell>
-      <section className="max-w-4xl">
-        <div className="rounded-lg border border-border bg-card p-6 text-card-foreground">
-          <p className="text-sm font-medium text-muted-foreground">
-            知识库管理
-          </p>
-          <h2 className="mt-2 text-xl font-semibold">知识库管理占位页</h2>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            当前阶段只验证后台布局、路由跳转和页面承载能力。真实知识库列表、卡片和数据请求将在后续知识库模块中实现。
-          </p>
-        </div>
-      </section>
+      <KnowledgeBaseManagement />
     </AdminShell>
   );
 }
