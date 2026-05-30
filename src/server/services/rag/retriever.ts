@@ -4,6 +4,7 @@ import { buildRetrieveResponse } from "@/server/services/rag/context-builder";
 import { listKnowledgeChunks } from "@/server/services/rag/chunk-repository";
 import { embedQuery } from "@/server/services/rag/embedding";
 import { fuseByRrf } from "@/server/services/rag/hybrid";
+import { processQuery } from "@/server/services/rag/query-processor";
 import { searchByVector } from "@/server/services/rag/vector-store";
 import type {
   KnowledgeChunk,
@@ -17,9 +18,10 @@ import type {
  *
  * 职责：
  * 1. 读取候选知识片段并应用 scope/status 过滤。
- * 2. 并行执行向量检索和 BM25 关键词检索。
- * 3. 使用 RRF 融合多路召回结果。
- * 4. 将最终结果交给 context-builder 组装成对外响应。
+ * 2. 对用户问题做规则化 rewrite / expansion。
+ * 3. 针对多条 retrieval query 执行向量检索和 BM25 关键词检索。
+ * 4. 使用 RRF 融合多路召回结果。
+ * 5. 将最终结果交给 context-builder 组装成对外响应。
  */
 export async function retrieveRagContexts(
   request: RagRetrieveRequest
@@ -31,15 +33,22 @@ export async function retrieveRagContexts(
 
   const topK = getTopK(request.mode ?? "balanced");
   const candidateLimit = topK * RAG_CONFIG.candidateMultiplier;
-  const queryVector = embedQuery(request.query);
-  const vectorResults = searchByVector(scopedChunks, queryVector)
-    .filter((item) => item.score >= RAG_CONFIG.minScore)
-    .slice(0, candidateLimit);
-  const bm25Results = searchByBm25(scopedChunks, request.query).slice(
-    0,
-    candidateLimit
+  const processedQuery = processQuery(request.query);
+  const resultGroups = processedQuery.retrievalQueries.flatMap(
+    (retrievalQuery) => {
+      const queryVector = embedQuery(retrievalQuery);
+      const vectorResults = searchByVector(scopedChunks, queryVector)
+        .filter((item) => item.score >= RAG_CONFIG.minScore)
+        .slice(0, candidateLimit);
+      const bm25Results = searchByBm25(scopedChunks, retrievalQuery).slice(
+        0,
+        candidateLimit
+      );
+
+      return [vectorResults, bm25Results];
+    }
   );
-  const scoredChunks = fuseByRrf([vectorResults, bm25Results]).slice(0, topK);
+  const scoredChunks = fuseByRrf(resultGroups).slice(0, topK);
 
   return buildRetrieveResponse(request.query, scoredChunks);
 }

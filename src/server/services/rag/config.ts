@@ -10,4 +10,6 @@ export const RAG_CONFIG = {
   bm25TitleWeight: 2,
   bm25SummaryWeight: 1.5,
   bm25ContentWeight: 1,
+  queryExpansionEnabled: true,
+  maxExpandedQueries: 4,
 } as const;
