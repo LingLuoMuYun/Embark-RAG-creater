@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
   CheckCircle2,
   Database,
   Plus,
@@ -54,6 +55,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 import { fetchRagItems } from "./api";
+import { KnowledgeDocumentsDialog } from "./knowledge-documents-dialog";
 import { mockRagItems } from "./mock-data";
 import {
   DEFAULT_KNOWLEDGE_BASE_FORM_VALUES,
@@ -118,6 +120,10 @@ export function KnowledgeBaseManagement() {
   const addItem = useAppStore((state) => state.addItem);
   const updateItem = useAppStore((state) => state.updateItem);
   const deleteItem = useAppStore((state) => state.deleteItem);
+  const setSelectedId = useAppStore((state) => state.setSelectedId);
+  const setSelected = useAppStore((state) => state.setSelected);
+  const setSelectedDocs = useAppStore((state) => state.setSelectedDocs);
+  const setSelectedChunks = useAppStore((state) => state.setSelectedChunks);
 
   const [searchInput, setSearchInput] = useState("");
   const [submittedSearchKeyword, setSubmittedSearchKeyword] = useState("");
@@ -133,6 +139,7 @@ export function KnowledgeBaseManagement() {
     DEFAULT_KNOWLEDGE_BASE_FORM_VALUES
   );
   const [formError, setFormError] = useState<string | null>(null);
+  const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
 
   useEffect(() => {
     if (didHydrate.current) return;
@@ -277,6 +284,14 @@ export function KnowledgeBaseManagement() {
 
     deleteItem(deleteTarget.id);
     setDeleteTarget(null);
+  }
+
+  function openDocumentsDialog(item: RagListItem) {
+    setSelectedId(item.id);
+    setSelected(item);
+    setSelectedDocs([]);
+    setSelectedChunks([]);
+    setDocumentsDialogOpen(true);
   }
 
   const isCreateMode = formDialogMode === "create";
@@ -491,6 +506,15 @@ export function KnowledgeBaseManagement() {
                 </Button>
                 <Button
                   type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openDocumentsDialog(item)}
+                >
+                  <BookOpen data-icon="inline-start" />
+                  查看知识
+                </Button>
+                <Button
+                  type="button"
                   variant="destructive"
                   size="sm"
                   onClick={() => setDeleteTarget(item)}
@@ -637,6 +661,13 @@ export function KnowledgeBaseManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {documentsDialogOpen ? (
+        <KnowledgeDocumentsDialog
+          open={documentsDialogOpen}
+          onOpenChange={setDocumentsDialogOpen}
+        />
+      ) : null}
     </section>
   );
 }
