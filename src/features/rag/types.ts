@@ -76,10 +76,21 @@ export type RagReference = {
   chunkType: KnowledgeChunkType;
 };
 
+export type RagRetrieveMetrics = {
+  fallback: boolean;
+  fallbackReason?: "below_min_score_but_keep_top1" | "no_relevant_context";
+  minScore: number;
+  fallbackTop1Score: number;
+  beforeMinScoreCount: number;
+  afterMinScoreCount: number;
+  topScore?: number;
+};
+
 /** /api/rag/retrieve 的响应体。 */
 export type RagRetrieveResponse = {
   query: string;
   contexts: RagContext[];
   llmContext: string;
   references: RagReference[];
+  metrics?: RagRetrieveMetrics;
 };

@@ -7,8 +7,9 @@ import { embedQuery } from "@/server/services/rag/embedding";
 import { searchByExactTerms } from "@/server/services/rag/exact-term";
 import { fuseByRrf } from "@/server/services/rag/hybrid";
 import { selectByMmr } from "@/server/services/rag/mmr";
-import { processQuery } from "@/server/services/rag/query-processor";
+import { processQueryWithRewrite } from "@/server/services/rag/query-processor";
 import { rerankByRules } from "@/server/services/rag/rules-reranker";
+import { applyMinScoreThreshold } from "@/server/services/rag/score-threshold";
 import { searchByVector } from "@/server/services/rag/vector-store";
 import type {
   KnowledgeChunk,
@@ -26,8 +27,9 @@ import type {
  * 3. 针对多条 retrieval query 执行向量、BM25 和精确词检索。
  * 4. 使用 RRF 融合多路召回结果。
  * 5. 使用规则精排提升标题、摘要、来源和意图匹配结果。
- * 6. 使用 MMR 从融合候选中选择更少冗余的 anchor chunk。
- * 7. 按 mode 补充邻近 chunk 后交给 context-builder 组装响应。
+ * 6. 过滤低于 minScore 的低相关候选，并按配置做 fallback 兜底。
+ * 7. 使用 MMR 从融合候选中选择更少冗余的 anchor chunk。
+ * 8. 按 mode 补充邻近 chunk 后交给 context-builder 组装响应。
  */
 export async function retrieveRagContexts(
   request: RagRetrieveRequest
@@ -40,12 +42,12 @@ export async function retrieveRagContexts(
   const mode = request.mode ?? "balanced";
   const topK = getTopK(mode);
   const candidateLimit = topK * RAG_CONFIG.candidateMultiplier;
-  const processedQuery = processQuery(request.query);
+  const processedQuery = await processQueryWithRewrite(request.query);
   const resultGroups = processedQuery.retrievalQueries.flatMap(
     (retrievalQuery) => {
       const queryVector = embedQuery(retrievalQuery);
       const vectorResults = searchByVector(scopedChunks, queryVector)
-        .filter((item) => item.score >= RAG_CONFIG.minScore)
+        .filter((item) => item.score >= RAG_CONFIG.vectorMinScore)
         .slice(0, candidateLimit);
       const bm25Results = searchByBm25(scopedChunks, retrievalQuery).slice(
         0,
@@ -61,7 +63,25 @@ export async function retrieveRagContexts(
   );
   const fusedChunks = fuseByRrf(resultGroups);
   const rerankedChunks = rerankByRules(fusedChunks, processedQuery, mode);
-  const anchorChunks = selectByMmr(rerankedChunks, topK);
+  const thresholdResult = applyMinScoreThreshold(rerankedChunks);
+
+  if (thresholdResult.status === "fallback_top1") {
+    return buildRetrieveResponse(
+      request.query,
+      [thresholdResult.fallbackChunk],
+      {
+        metrics: thresholdResult.metrics,
+      }
+    );
+  }
+
+  if (thresholdResult.status === "empty") {
+    return buildRetrieveResponse(request.query, [], {
+      metrics: thresholdResult.metrics,
+    });
+  }
+
+  const anchorChunks = selectByMmr(thresholdResult.candidates, topK);
   const scoredChunks = expandWithAdjacentChunks(
     anchorChunks,
     scopedChunks,

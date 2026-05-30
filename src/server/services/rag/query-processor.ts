@@ -1,9 +1,11 @@
 import { RAG_CONFIG } from "@/server/services/rag/config";
+import { rewriteQueryWithLlm } from "@/server/services/rag/llm-query-rewriter";
 
 export type ProcessedQuery = {
   originalQuery: string;
   normalizedQuery: string;
   expandedQueries: string[];
+  llmRewrittenQueries: string[];
   retrievalQueries: string[];
 };
 
@@ -32,33 +34,56 @@ export function processQuery(query: string): ProcessedQuery {
   const expandedQueries = RAG_CONFIG.queryExpansionEnabled
     ? expandQuery(normalizedQuery)
     : [];
-  const retrievalQueries = uniqueNonEmpty([
+  const llmRewrittenQueries: string[] = [];
+  const retrievalQueries = buildRetrievalQueries(
     originalQuery,
     normalizedQuery,
-    ...expandedQueries,
-  ]).slice(0, RAG_CONFIG.maxExpandedQueries + 2);
+    expandedQueries,
+    llmRewrittenQueries
+  );
 
   return {
     originalQuery,
     normalizedQuery,
     expandedQueries,
+    llmRewrittenQueries,
     retrievalQueries,
   };
 }
 
 /**
- * 标准化用户问题。
+ * 异步 query 处理入口。
  *
- * 目前只做安全的文本清理：统一空白、全角符号和常见问句后缀；
- * 不改变业务含义，避免把用户原问题改坏。
+ * 该函数在规则扩展之外预留 LLM query rewrite 接口；
+ * 默认配置不调用 LLM，后续打开开关即可把模型改写结果合入 retrievalQueries。
  */
-export function normalizeQuery(query: string): string {
-  return query
-    .trim()
-    .replace(/[？?！!。；;]/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(QUESTION_SUFFIX_PATTERN, "")
-    .trim();
+export async function processQueryWithRewrite(
+  query: string
+): Promise<ProcessedQuery> {
+  const originalQuery = query;
+  const normalizedQuery = normalizeQuery(query);
+  const expandedQueries = RAG_CONFIG.queryExpansionEnabled
+    ? expandQuery(normalizedQuery)
+    : [];
+  const llmRewrittenQueries = await getLlmRewrittenQueries(
+    originalQuery,
+    normalizedQuery,
+    expandedQueries
+  );
+  const retrievalQueries = buildRetrievalQueries(
+    originalQuery,
+    normalizedQuery,
+    expandedQueries,
+    llmRewrittenQueries
+  );
+
+  return {
+    originalQuery,
+    normalizedQuery,
+    expandedQueries,
+    llmRewrittenQueries,
+    retrievalQueries,
+  };
 }
 
 /**
@@ -84,6 +109,64 @@ export function expandQuery(query: string): string[] {
   }
 
   return uniqueNonEmpty(expansions).slice(0, RAG_CONFIG.maxExpandedQueries);
+}
+
+/** 按稳定优先级合并原始 query、标准化 query、规则扩展和 LLM 改写结果。 */
+function buildRetrievalQueries(
+  originalQuery: string,
+  normalizedQuery: string,
+  expandedQueries: string[],
+  llmRewrittenQueries: string[]
+): string[] {
+  return uniqueNonEmpty([
+    originalQuery,
+    normalizedQuery,
+    ...expandedQueries,
+    ...llmRewrittenQueries,
+  ]).slice(
+    0,
+    RAG_CONFIG.maxExpandedQueries + RAG_CONFIG.maxLlmRewrittenQueries + 2
+  );
+}
+
+/**
+ * 标准化用户问题。
+ *
+ * 目前只做安全的文本清理：统一空白、全角符号和常见问句后缀；
+ * 不改变业务含义，避免把用户原问题改坏。
+ */
+export function normalizeQuery(query: string): string {
+  return query
+    .trim()
+    .replace(/[？?！!。；;]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(QUESTION_SUFFIX_PATTERN, "")
+    .trim();
+}
+
+/** 在配置开启时调用 LLM query rewrite，失败时默认降级为空结果。 */
+async function getLlmRewrittenQueries(
+  originalQuery: string,
+  normalizedQuery: string,
+  expandedQueries: string[]
+): Promise<string[]> {
+  if (!RAG_CONFIG.llmQueryRewriteEnabled) return [];
+
+  try {
+    const rewrittenQueries = await rewriteQueryWithLlm(originalQuery, {
+      normalizedQuery,
+      ruleExpandedQueries: expandedQueries,
+      maxRewrites: RAG_CONFIG.maxLlmRewrittenQueries,
+    });
+
+    return uniqueNonEmpty(rewrittenQueries).slice(
+      0,
+      RAG_CONFIG.maxLlmRewrittenQueries
+    );
+  } catch (error) {
+    if (RAG_CONFIG.llmQueryRewriteFailOpen) return [];
+    throw error;
+  }
 }
 
 function uniqueNonEmpty(values: string[]): string[] {
