@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git log *)",
+      "Bash(npm run *)",
+      "Bash(git cherry-pick *)",
+      "Bash(git stash *)",
+      "Bash(npm install *)",
+      "WebSearch",
+      "Bash(git add *)"
+    ]
+  }
+}
