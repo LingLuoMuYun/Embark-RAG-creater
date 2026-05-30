@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpen,
   CheckCircle2,
   Database,
   Plus,
@@ -55,7 +54,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 import { fetchRagItems } from "./api";
-import { KnowledgeDocumentsDialog } from "./knowledge-documents-dialog";
 import { mockRagItems } from "./mock-data";
 import {
   DEFAULT_KNOWLEDGE_BASE_FORM_VALUES,
@@ -120,10 +118,6 @@ export function KnowledgeBaseManagement() {
   const addItem = useAppStore((state) => state.addItem);
   const updateItem = useAppStore((state) => state.updateItem);
   const deleteItem = useAppStore((state) => state.deleteItem);
-  const setSelectedId = useAppStore((state) => state.setSelectedId);
-  const setSelected = useAppStore((state) => state.setSelected);
-  const setSelectedDocs = useAppStore((state) => state.setSelectedDocs);
-  const setSelectedChunks = useAppStore((state) => state.setSelectedChunks);
 
   const [searchInput, setSearchInput] = useState("");
   const [submittedSearchKeyword, setSubmittedSearchKeyword] = useState("");
@@ -135,7 +129,6 @@ export function KnowledgeBaseManagement() {
   >(null);
   const [editingItem, setEditingItem] = useState<RagListItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RagListItem | null>(null);
-  const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
   const [formValues, setFormValues] = useState<KnowledgeBaseFormValues>(
     DEFAULT_KNOWLEDGE_BASE_FORM_VALUES
   );
@@ -223,14 +216,6 @@ export function KnowledgeBaseManagement() {
     setFormDialogMode(null);
     setEditingItem(null);
     setFormError(null);
-  }
-
-  function openDocumentsDialog(item: RagListItem) {
-    setSelectedId(item.id);
-    setSelected(item);
-    setSelectedDocs([]);
-    setSelectedChunks([]);
-    setDocumentsDialogOpen(true);
   }
 
   function updateFormValue<K extends keyof KnowledgeBaseFormValues>(
@@ -322,14 +307,14 @@ export function KnowledgeBaseManagement() {
             card.key === "all"
               ? stats.total
               : card.key === "active"
-                ? stats.active
-                : stats.disabled;
+              ? stats.active
+              : stats.disabled;
           const Icon =
             card.key === "active"
               ? CheckCircle2
               : card.key === "disabled"
-                ? XCircle
-                : Database;
+              ? XCircle
+              : Database;
 
           return (
             <Card
@@ -475,7 +460,9 @@ export function KnowledgeBaseManagement() {
               </CardTitle>
               <CardAction>
                 <Badge
-                  variant={item.status === "active" ? "secondary" : "destructive"}
+                  variant={
+                    item.status === "active" ? "secondary" : "destructive"
+                  }
                 >
                   {getStatusText(item.status)}
                 </Badge>
@@ -501,15 +488,6 @@ export function KnowledgeBaseManagement() {
                   onClick={() => openEditDialog(item)}
                 >
                   编辑
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openDocumentsDialog(item)}
-                >
-                  <BookOpen data-icon="inline-start" />
-                  查看知识
                 </Button>
                 <Button
                   type="button"
@@ -659,11 +637,6 @@ export function KnowledgeBaseManagement() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <KnowledgeDocumentsDialog
-        open={documentsDialogOpen}
-        onOpenChange={setDocumentsDialogOpen}
-      />
     </section>
   );
 }
