@@ -33,6 +33,7 @@ export type DocumentListOptions = {
   page?: number;
   pageSize?: number;
   status?: string;
+  hasCandidates?: boolean;
 };
 
 export async function createDocument(input: DocumentCreateInput) {
@@ -63,10 +64,19 @@ export async function getDocumentById(id: string) {
 }
 
 export async function listDocuments(options: DocumentListOptions = {}) {
-  const { page = 1, pageSize = 20, status } = options;
+  const { page = 1, pageSize = 20, status, hasCandidates } = options;
 
   const where: Prisma.DocumentSourceWhereInput = {};
   if (status) where.status = status;
+
+  if (hasCandidates) {
+    const docIds = await prisma.candidateKnowledge.findMany({
+      select: { documentSourceId: true },
+      distinct: ["documentSourceId"],
+      where: { documentSourceId: { not: null } },
+    });
+    where.id = { in: docIds.map((d) => d.documentSourceId!).filter(Boolean) };
+  }
 
   const [items, total] = await Promise.all([
     prisma.documentSource.findMany({
@@ -78,7 +88,36 @@ export async function listDocuments(options: DocumentListOptions = {}) {
     prisma.documentSource.count({ where }),
   ]);
 
-  return { items, total, page, pageSize };
+  // 获取每个文档关联的候选知识数量
+  const docIds = items.map((d) => d.id);
+  const candidateCounts = docIds.length > 0
+    ? await prisma.candidateKnowledge.groupBy({
+        by: ["documentSourceId", "status"],
+        where: { documentSourceId: { in: docIds } },
+        _count: { id: true },
+      })
+    : [];
+
+  const candidateMap: Record<string, { pending: number; confirmed: number }> = {};
+  for (const c of candidateCounts) {
+    if (!c.documentSourceId) continue;
+    if (!candidateMap[c.documentSourceId]) {
+      candidateMap[c.documentSourceId] = { pending: 0, confirmed: 0 };
+    }
+    if (c.status === "confirmed") {
+      candidateMap[c.documentSourceId].confirmed = c._count.id;
+    } else {
+      candidateMap[c.documentSourceId].pending = c._count.id;
+    }
+  }
+
+  const itemsWithCandidates = items.map((d) => ({
+    ...d,
+    candidatePending: candidateMap[d.id]?.pending ?? 0,
+    candidateConfirmed: candidateMap[d.id]?.confirmed ?? 0,
+  }));
+
+  return { items: itemsWithCandidates, total, page, pageSize };
 }
 
 export async function deleteDocument(id: string) {
@@ -93,7 +132,10 @@ export async function deleteDocument(id: string) {
     // file may not exist on disk
   }
 
-  await prisma.documentSource.delete({ where: { id } });
+  await prisma.$transaction([
+    prisma.candidateKnowledge.deleteMany({ where: { documentSourceId: id } }),
+    prisma.documentSource.delete({ where: { id } }),
+  ]);
   return doc;
 }
 
@@ -162,6 +204,37 @@ export async function parseDocument(id: string): Promise<{
     await updateDocumentStatus(id, "failed", { errorMessage: message });
     throw error;
   }
+}
+
+export async function updateDocumentContent(id: string, content: string) {
+  const doc = await prisma.documentSource.findUnique({ where: { id } });
+  if (!doc) return null;
+
+  // Re-split the updated content into chunks
+  const chunks = splitTextIntoChunks(content);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.documentChunk.deleteMany({ where: { documentSourceId: id } });
+
+    if (chunks.length > 0) {
+      await tx.documentChunk.createMany({
+        data: chunks.map((chunk: TextChunk, index: number) => ({
+          documentSourceId: id,
+          chunkIndex: index,
+          content: chunk.content,
+          charStart: chunk.charStart,
+          charEnd: chunk.charEnd,
+        })),
+      });
+    }
+
+    await tx.documentSource.update({
+      where: { id },
+      data: { content, chunkCount: chunks.length },
+    });
+  });
+
+  return prisma.documentSource.findUnique({ where: { id } });
 }
 
 export async function getDocumentChunks(documentSourceId: string) {

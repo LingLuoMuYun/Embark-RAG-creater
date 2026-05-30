@@ -1,5 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteCandidateById } from "@/server/services/extraction.service";
+import {
+  deleteCandidateById,
+  updateCandidate,
+} from "@/server/services/extraction.service";
+import { UpdateCandidateSchema } from "@/features/extraction/extraction.validation";
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+    const parsed = UpdateCandidateSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } },
+        { status: 400 }
+      );
+    }
+
+    const tags = parsed.data.suggestedTags
+      ? typeof parsed.data.suggestedTags === "string"
+        ? parsed.data.suggestedTags.split(",").map((t: string) => t.trim())
+        : parsed.data.suggestedTags
+      : undefined;
+
+    const result = await updateCandidate(id, {
+      title: parsed.data.title,
+      content: parsed.data.content,
+      suggestedCategory: parsed.data.suggestedCategory,
+      suggestedTags: tags,
+      type: parsed.data.type,
+    });
+
+    if (!result) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "候选知识不存在" } },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: result.id,
+        title: result.title,
+        content: result.content,
+        suggestedCategory: result.suggestedCategory,
+        suggestedTags: JSON.parse(result.suggestedTags || "[]"),
+        type: result.type,
+        status: result.status,
+      },
+      message: "更新成功",
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "服务器内部错误";
+    return NextResponse.json(
+      { success: false, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 }
+    );
+  }
+}
 
 export async function DELETE(
   _request: NextRequest,

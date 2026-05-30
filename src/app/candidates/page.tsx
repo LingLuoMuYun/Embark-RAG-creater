@@ -84,7 +84,7 @@ export default function CandidatesPage() {
   };
 
   const handleRetry = () => {
-    router.push("/extraction");
+    router.push("/documents");
   };
 
   const handleEditSave = async (
@@ -114,10 +114,10 @@ export default function CandidatesPage() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => router.push("/extraction")}
+              onClick={() => router.push("/documents")}
               className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
             >
-              ← 返回提炼
+              ← 返回文档管理
             </button>
             <button
               onClick={fetchCandidates}

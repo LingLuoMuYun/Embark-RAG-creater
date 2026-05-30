@@ -32,6 +32,15 @@ export const RetryRequestSchema = z.object({
   documentId: z.string().min(1, "文档 ID 不能为空"),
 });
 
+/** PATCH /api/knowledge/candidates/[id] 请求体 */
+export const UpdateCandidateSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  content: z.string().min(1).optional(),
+  suggestedCategory: z.string().nullable().optional(),
+  suggestedTags: z.union([z.array(z.string()), z.string()]).optional(),
+  type: z.enum(["faq", "concept", "procedure", "note", "summary"]).optional(),
+});
+
 /** POST /api/knowledge/candidates/confirm 请求体 */
 export const ConfirmRequestSchema = z.object({
   ids: z.array(z.string()).min(1, "至少选择一条"),

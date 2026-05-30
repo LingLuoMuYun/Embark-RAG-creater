@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
       page: searchParams.get("page") ?? undefined,
       pageSize: searchParams.get("pageSize") ?? undefined,
       status: searchParams.get("status") ?? undefined,
+      hasCandidates: searchParams.get("hasCandidates") ?? undefined,
     });
 
     if (!parsed.success) {

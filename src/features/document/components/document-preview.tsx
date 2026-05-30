@@ -1,22 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-interface ChunkData {
+interface CandidateItem {
   id: string;
-  chunkIndex: number;
+  title: string;
   content: string;
-  charStart: number;
-  charEnd: number;
+  suggestedCategory: string | null;
+  suggestedTags: string[];
+  type: string;
+  status: string;
 }
 
-interface PreviewData {
+interface DocInfo {
   id: string;
   originalName: string;
   content: string | null;
   status: string;
-  chunkCount?: number;
-  errorMessage: string | null;
 }
 
 interface DocumentPreviewProps {
@@ -24,68 +24,119 @@ interface DocumentPreviewProps {
   onClose: () => void;
 }
 
-type ViewMode = "full" | "chunks";
+const typeLabels: Record<string, string> = {
+  faq: "问答", concept: "概念", procedure: "步骤", note: "注意", summary: "总结",
+};
+const typeColors: Record<string, string> = {
+  faq: "bg-purple-100 text-purple-700", concept: "bg-blue-100 text-blue-700",
+  procedure: "bg-green-100 text-green-700", note: "bg-yellow-100 text-yellow-700",
+  summary: "bg-gray-100 text-gray-700",
+};
+const statusBadge: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-700", confirmed: "bg-green-100 text-green-700",
+};
+
+type Tab = "text" | "knowledge";
 
 export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
-  const [data, setData] = useState<PreviewData | null>(null);
-  const [chunks, setChunks] = useState<ChunkData[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>("full");
+  const [tab, setTab] = useState<Tab>("text");
+  const [docInfo, setDocInfo] = useState<DocInfo | null>(null);
+  const [candidates, setCandidates] = useState<CandidateItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [chunksLoading, setChunksLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<CandidateItem | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [editTextSaving, setEditTextSaving] = useState(false);
+
+  const fetchData = useCallback(async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [docRes, candRes] = await Promise.all([
+        fetch(`/api/documents/${id}`),
+        fetch(`/api/knowledge/candidates?documentSourceId=${id}`),
+      ]);
+      const docData = await docRes.json();
+      if (docData.success) {
+        setDocInfo(docData.data);
+        setEditText(docData.data.content || "");
+      }
+      const candData = await candRes.json();
+      if (candData.success) {
+        setCandidates(candData.data.candidates);
+      }
+    } catch {
+      setError("加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!documentId) return;
+    setTab("text");
+    fetchData(documentId);
+  }, [documentId, fetchData]);
 
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard data fetching reset before async
-    setLoading(true);
-    setError(null);
-    setChunks([]);
-    setViewMode("full");
-    fetch(`/api/documents/${documentId}`)
-      .then((res) => res.json())
-      .then((json) => {
-        if (cancelled) return;
-        if (json.success) {
-          setData(json.data);
-        } else {
-          throw new Error(json.error?.message || "加载失败");
-        }
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "加载失败");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+  useEffect(() => {
+    if (!editTarget) {
+      const handleEsc = (e: KeyboardEvent) => {
+        if (e.key === "Escape") onClose();
+      };
+      window.addEventListener("keydown", handleEsc);
+      return () => window.removeEventListener("keydown", handleEsc);
+    }
+  }, [editTarget, onClose]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [documentId]);
-
-  async function fetchChunks() {
-    if (!documentId || chunks.length > 0) return;
-    setChunksLoading(true);
+  const handleSaveCandidate = async () => {
+    if (!editTarget || !editTarget.title.trim() || !editTarget.content.trim()) return;
+    setSaving(true);
     try {
-      const res = await fetch(`/api/documents/${documentId}/chunks`);
+      const res = await fetch(`/api/knowledge/candidates/${editTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editTarget.title,
+          content: editTarget.content,
+          suggestedCategory: editTarget.suggestedCategory,
+          suggestedTags: editTarget.suggestedTags,
+          type: editTarget.type,
+        }),
+      });
       const json = await res.json();
       if (json.success) {
-        setChunks(json.data);
+        setCandidates((prev) =>
+          prev.map((c) => (c.id === editTarget.id ? { ...editTarget } : c))
+        );
+        setEditTarget(null);
       }
-    } catch {
-      // ignore
-    } finally {
-      setChunksLoading(false);
-    }
-  }
+    } catch { /* ignore */ } finally { setSaving(false); }
+  };
 
-  function handleTabChange(mode: ViewMode) {
-    setViewMode(mode);
-    if (mode === "chunks") fetchChunks();
-  }
+  const handleSaveText = async () => {
+    if (!docInfo) return;
+    setEditTextSaving(true);
+    try {
+      const res = await fetch(`/api/documents/${docInfo.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: editText }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setDocInfo(json.data);
+      }
+    } catch { /* ignore */ } finally { setEditTextSaving(false); }
+  };
+
+  const handleDeleteCandidate = async (id: string) => {
+    if (!confirm("确定删除该知识条目？")) return;
+    try {
+      await fetch(`/api/knowledge/candidates/${id}`, { method: "DELETE" });
+      setCandidates((prev) => prev.filter((c) => c.id !== id));
+    } catch { /* ignore */ }
+  };
 
   if (!documentId) return null;
 
@@ -95,13 +146,13 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
       onClick={onClose}
     >
       <div
-        className="mx-4 flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl"
+        className="mx-4 flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-3">
           <h2 className="text-lg font-semibold text-zinc-900">
-            {loading ? "加载中..." : data?.originalName || "文档预览"}
+            {loading ? "加载中..." : docInfo?.originalName || "文档预览"}
           </h2>
           <button
             onClick={onClose}
@@ -114,30 +165,24 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
         </div>
 
         {/* Tabs */}
-        {data?.status === "parsed" && (data?.chunkCount ?? 0) > 0 && (
-          <div className="flex border-b border-zinc-200">
+        <div className="flex border-b border-zinc-200">
+          {([
+            { key: "text" as Tab, label: "原文内容" },
+            { key: "knowledge" as Tab, label: `提炼知识${candidates.length > 0 ? `（${candidates.length}）` : ""}` },
+          ]).map((t) => (
             <button
-              onClick={() => handleTabChange("full")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                viewMode === "full"
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+                tab === t.key
                   ? "border-b-2 border-blue-500 text-blue-600"
                   : "text-zinc-500 hover:text-zinc-700"
               }`}
             >
-              全文
+              {t.label}
             </button>
-            <button
-              onClick={() => handleTabChange("chunks")}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                viewMode === "chunks"
-                  ? "border-b-2 border-blue-500 text-blue-600"
-                  : "text-zinc-500 hover:text-zinc-700"
-              }`}
-            >
-              分段（{data?.chunkCount ?? 0} 段）
-            </button>
-          </div>
-        )}
+          ))}
+        </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
@@ -148,80 +193,167 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
             </div>
           ) : error ? (
             <p className="text-sm text-red-600">{error}</p>
-          ) : data?.status === "parsed" && data.content ? (
-            viewMode === "full" ? (
-              <pre className="whitespace-pre-wrap break-words rounded bg-zinc-50 p-4 text-sm leading-relaxed text-zinc-700">
-                {data.content}
-              </pre>
-            ) : chunksLoading ? (
-              <div className="flex items-center justify-center py-16 text-sm text-zinc-500">
-                <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
-                加载分段数据...
+          ) : tab === "text" ? (
+            /* ── 原文内容 ── */
+            <div className="space-y-4">
+              {docInfo?.content ? (
+                <>
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={18}
+                    className="w-full px-4 py-3 border border-zinc-300 rounded-lg text-sm leading-relaxed text-gray-900 resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleSaveText}
+                      disabled={editText === (docInfo?.content || "") || editTextSaving}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {editTextSaving ? "保存中..." : "保存修改"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="py-16 text-center text-sm text-zinc-400">
+                  {docInfo?.status === "uploaded"
+                    ? "文档尚未解析，请先解析后再查看"
+                    : "暂无文本内容"}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── 提炼知识 ── */
+            candidates.length === 0 ? (
+              <div className="py-16 text-center text-sm text-zinc-400">
+                <p>暂无提炼知识</p>
+                <p className="text-xs mt-1">请先在文档列表对该文档执行 AI 提炼</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {chunks.map((chunk, i) => (
-                  <div
-                    key={chunk.id}
-                    className="rounded-lg border border-zinc-200 bg-zinc-50"
-                  >
-                    <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-1.5">
-                      <span className="text-xs font-medium text-zinc-500">
-                        第 {i + 1} 段
-                      </span>
-                      <span className="text-xs text-zinc-400">
-                        字符 {chunk.charStart + 1}–{chunk.charEnd} &middot;{" "}
-                        {chunk.content.length.toLocaleString()} 字
-                      </span>
+              <div className="space-y-3">
+                {candidates.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-zinc-200 bg-zinc-50">
+                    <div className="flex items-start justify-between px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${typeColors[c.type] || "bg-gray-100 text-gray-600"}`}>
+                            {typeLabels[c.type] || c.type}
+                          </span>
+                          {c.suggestedCategory && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">
+                              {c.suggestedCategory}
+                            </span>
+                          )}
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusBadge[c.status] || "bg-gray-100 text-gray-600"}`}>
+                            {c.status === "confirmed" ? "已入库" : "待审核"}
+                          </span>
+                        </div>
+                        <h3 className="font-medium text-gray-900 text-sm mb-1">{c.title}</h3>
+                        <p className="text-xs text-gray-600 whitespace-pre-wrap line-clamp-4">{c.content}</p>
+                        {c.suggestedTags.length > 0 && (
+                          <div className="flex gap-1 mt-2 flex-wrap">
+                            {c.suggestedTags.map((tag: string) => (
+                              <span key={tag} className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1 ml-3 flex-shrink-0">
+                        <button
+                          onClick={() => setEditTarget({ ...c })}
+                          className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCandidate(c.id)}
+                          className="rounded px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </div>
-                    <pre className="whitespace-pre-wrap break-words px-3 py-3 text-sm leading-relaxed text-zinc-700">
-                      {chunk.content}
-                    </pre>
                   </div>
                 ))}
               </div>
             )
-          ) : data?.status === "failed" ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-              解析失败：{data.errorMessage || "未知错误"}
-            </div>
-          ) : (
-            <p className="py-16 text-center text-sm text-zinc-400">
-              {data?.status === "uploaded"
-                ? "文档尚未解析"
-                : data?.status === "parsing"
-                  ? "正在解析中..."
-                  : "暂无内容"}
-            </p>
           )}
         </div>
-
-        {/* Footer */}
-        <div className="border-t border-zinc-200 px-6 py-3">
-          <p className="text-xs text-zinc-400">
-            状态：
-            {data?.status === "parsed"
-              ? "已解析"
-              : data?.status === "failed"
-                ? "解析失败"
-                : data?.status === "parsing"
-                  ? "解析中"
-                  : data?.status === "uploaded"
-                    ? "待解析"
-                    : data?.status || "未知"}
-            {data?.content && (
-              <>
-                {" "}&middot; 总字符：{data.content.length.toLocaleString()}
-              </>
-            )}
-            {(data?.chunkCount ?? 0) > 0 && (
-              <>
-                {" "}&middot; 切分段数：{data?.chunkCount ?? 0}
-              </>
-            )}
-          </p>
-        </div>
       </div>
+
+      {/* 编辑候选知识弹窗 */}
+      {editTarget && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
+          onClick={() => setEditTarget(null)}
+        >
+          <div
+            className="mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 space-y-4">
+              <h3 className="text-lg font-semibold text-gray-900">编辑知识条目</h3>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">标题</label>
+                <input
+                  value={editTarget.title}
+                  onChange={(e) => setEditTarget({ ...editTarget, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">内容</label>
+                <textarea
+                  value={editTarget.content}
+                  onChange={(e) => setEditTarget({ ...editTarget, content: e.target.value })}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                  <input
+                    value={editTarget.suggestedCategory || ""}
+                    onChange={(e) => setEditTarget({ ...editTarget, suggestedCategory: e.target.value || null })}
+                    placeholder="如：前端开发"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">知识类型</label>
+                  <select
+                    value={editTarget.type}
+                    onChange={(e) => setEditTarget({ ...editTarget, type: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="concept">概念</option>
+                    <option value="faq">问答</option>
+                    <option value="procedure">步骤</option>
+                    <option value="note">注意</option>
+                    <option value="summary">总结</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">标签（逗号分隔）</label>
+                <input
+                  value={editTarget.suggestedTags.join(", ")}
+                  onChange={(e) => setEditTarget({ ...editTarget, suggestedTags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
+                  placeholder="如：React, Hooks"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setEditTarget(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">取消</button>
+                <button onClick={handleSaveCandidate} disabled={!editTarget.title.trim() || !editTarget.content.trim() || saving} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {saving ? "保存中..." : "保存修改"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
