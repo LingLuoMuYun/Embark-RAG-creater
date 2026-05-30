@@ -23,15 +23,14 @@ export type RagDoc = {
 
 export type RagChunk = {
   id: string;
+  documentId: string;
   content: string;
   tokenCount?: number;
   charCount?: number;
   createdAt?: string;
 };
 
-export type RagDetail = RagListItem & {
-  documents: RagDoc[];
-};
+export type RagDetail = RagListItem;
 
 export type KnowledgeBaseFormValues = {
   name: string;

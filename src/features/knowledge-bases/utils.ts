@@ -1,5 +1,7 @@
 import type {
   KnowledgeBaseFormValues,
+  RagChunk,
+  RagDoc,
   RagListItem,
   RagStatus,
   SortDirection,
@@ -134,4 +136,142 @@ export function validateKnowledgeBaseForm(params: {
   if (duplicated) return "知识库名称不能重复";
 
   return null;
+}
+
+export const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
+
+export const ALLOWED_EXTENSIONS = [
+  ".pdf",
+  ".docx",
+  ".txt",
+  ".md",
+  ".markdown",
+];
+
+export const ALLOWED_MIME_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "text/markdown",
+];
+
+function getFileExtension(fileName: string) {
+  const index = fileName.lastIndexOf(".");
+
+  return index >= 0 ? fileName.slice(index).toLowerCase() : "";
+}
+
+export function formatFileSize(size: number) {
+  if (!Number.isFinite(size) || size <= 0) return "0 B";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function validateUploadFile(params: {
+  files: FileList | File[];
+  selectedDocs: RagDoc[];
+}) {
+  const files = Array.from(params.files);
+
+  if (files.length === 0) return "请选择要上传的文件";
+  if (files.length > 1) return "当前仅支持一次上传 1 个文件";
+
+  const file = files[0];
+  const extension = getFileExtension(file.name);
+  const validExtension = ALLOWED_EXTENSIONS.includes(extension);
+  const validMime =
+    !file.type || ALLOWED_MIME_TYPES.includes(file.type) || validExtension;
+
+  if (!validExtension || !validMime) {
+    return "仅支持 PDF、DOCX、TXT、Markdown 文件";
+  }
+
+  if (file.size > MAX_UPLOAD_SIZE) {
+    return "文件大小不能超过 20MB";
+  }
+
+  const duplicated = params.selectedDocs.some((doc) => doc.name === file.name);
+
+  if (duplicated) {
+    return "当前知识库已存在同名文档";
+  }
+
+  return null;
+}
+
+export function createMockDocumentFromFile(file: File): RagDoc {
+  return {
+    id: createClientId(),
+    name: file.name,
+    size: file.size,
+    uploadedAt: new Date().toISOString(),
+  };
+}
+
+export function createMockChunksForDocument(doc: RagDoc): RagChunk[] {
+  const count = 2 + Math.floor(Math.random() * 2);
+
+  return Array.from({ length: count }, (_, index) => {
+    const content = `这是从 ${doc.name} 生成的模拟知识分片 ${index + 1}。`;
+
+    return {
+      id: createClientId(),
+      documentId: doc.id,
+      content,
+      charCount: content.length,
+      tokenCount: Math.ceil(content.length / 2),
+      createdAt: new Date().toISOString(),
+    };
+  });
+}
+
+export function getTotalChunkCount(
+  chunksByDocumentId: Record<string, RagChunk[]>
+) {
+  return Object.values(chunksByDocumentId).reduce(
+    (sum, chunks) => sum + chunks.length,
+    0
+  );
+}
+
+export function normalizeRagDoc(input: unknown): RagDoc {
+  const item = isRecord(input) ? input : {};
+
+  return {
+    id: typeof item.id === "string" ? item.id : createClientId(),
+    name:
+      typeof item.name === "string" && item.name.trim()
+        ? item.name
+        : "未命名文档",
+    size: toNumberValue(item.size, 0),
+    uploadedAt:
+      typeof item.uploadedAt === "string" && item.uploadedAt.trim()
+        ? item.uploadedAt
+        : "--",
+  };
+}
+
+export function normalizeRagChunk(input: unknown): RagChunk {
+  const item = isRecord(input) ? input : {};
+  const content =
+    typeof item.content === "string" && item.content.trim()
+      ? item.content
+      : "暂无内容";
+
+  return {
+    id: typeof item.id === "string" ? item.id : createClientId(),
+    documentId: typeof item.documentId === "string" ? item.documentId : "",
+    content,
+    charCount: toNumberValue(item.charCount, content.length),
+    tokenCount:
+      typeof item.tokenCount === "number" && Number.isFinite(item.tokenCount)
+        ? item.tokenCount
+        : undefined,
+    createdAt:
+      typeof item.createdAt === "string" && item.createdAt.trim()
+        ? item.createdAt
+        : "--",
+  };
 }
