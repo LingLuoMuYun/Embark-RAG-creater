@@ -5,11 +5,11 @@ import type { KnowledgeChunk } from "@/features/rag/types";
  * 混合检索融合模块。
  *
  * 职责：
- * 1. 接收向量检索、BM25 等多路候选结果。
+ * 1. 接收向量检索、BM25、精确词检索等多路候选结果。
  * 2. 使用 RRF 按排名融合结果，避免直接比较不同检索器的原始分数。
  * 3. 按 chunk.id 去重并输出统一的排序结果。
  */
-export type RetrievalResultSource = "vector" | "bm25" | "hybrid";
+export type RetrievalResultSource = "vector" | "bm25" | "exact" | "hybrid";
 
 export type RankedRetrievalResult = {
   chunk: KnowledgeChunk;

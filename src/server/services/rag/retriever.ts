@@ -1,9 +1,12 @@
 import { RAG_CONFIG } from "@/server/services/rag/config";
 import { searchByBm25 } from "@/server/services/rag/bm25";
+import { expandWithAdjacentChunks } from "@/server/services/rag/context-expander";
 import { buildRetrieveResponse } from "@/server/services/rag/context-builder";
 import { listKnowledgeChunks } from "@/server/services/rag/chunk-repository";
 import { embedQuery } from "@/server/services/rag/embedding";
+import { searchByExactTerms } from "@/server/services/rag/exact-term";
 import { fuseByRrf } from "@/server/services/rag/hybrid";
+import { selectByMmr } from "@/server/services/rag/mmr";
 import { processQuery } from "@/server/services/rag/query-processor";
 import { searchByVector } from "@/server/services/rag/vector-store";
 import type {
@@ -19,9 +22,10 @@ import type {
  * 职责：
  * 1. 读取候选知识片段并应用 scope/status 过滤。
  * 2. 对用户问题做规则化 rewrite / expansion。
- * 3. 针对多条 retrieval query 执行向量检索和 BM25 关键词检索。
+ * 3. 针对多条 retrieval query 执行向量、BM25 和精确词检索。
  * 4. 使用 RRF 融合多路召回结果。
- * 5. 将最终结果交给 context-builder 组装成对外响应。
+ * 5. 使用 MMR 从融合候选中选择更少冗余的 anchor chunk。
+ * 6. 按 mode 补充邻近 chunk 后交给 context-builder 组装响应。
  */
 export async function retrieveRagContexts(
   request: RagRetrieveRequest
@@ -31,7 +35,8 @@ export async function retrieveRagContexts(
     isChunkInScope(chunk, request)
   );
 
-  const topK = getTopK(request.mode ?? "balanced");
+  const mode = request.mode ?? "balanced";
+  const topK = getTopK(mode);
   const candidateLimit = topK * RAG_CONFIG.candidateMultiplier;
   const processedQuery = processQuery(request.query);
   const resultGroups = processedQuery.retrievalQueries.flatMap(
@@ -44,11 +49,21 @@ export async function retrieveRagContexts(
         0,
         candidateLimit
       );
+      const exactTermResults = searchByExactTerms(
+        scopedChunks,
+        retrievalQuery
+      ).slice(0, candidateLimit);
 
-      return [vectorResults, bm25Results];
+      return [vectorResults, bm25Results, exactTermResults];
     }
   );
-  const scoredChunks = fuseByRrf(resultGroups).slice(0, topK);
+  const fusedChunks = fuseByRrf(resultGroups);
+  const anchorChunks = selectByMmr(fusedChunks, topK);
+  const scoredChunks = expandWithAdjacentChunks(
+    anchorChunks,
+    scopedChunks,
+    mode
+  );
 
   return buildRetrieveResponse(request.query, scoredChunks);
 }
