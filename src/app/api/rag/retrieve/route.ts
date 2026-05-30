@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(retrieveRagContexts(parsed.data));
+    const result = await retrieveRagContexts(parsed.data);
+    return NextResponse.json(result);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to retrieve RAG contexts";
