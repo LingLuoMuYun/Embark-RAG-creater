@@ -6,6 +6,14 @@ import type {
   RagRetrieveResponse,
 } from "@/features/rag/types";
 
+/**
+ * 检索结果上下文构建模块。
+ *
+ * 职责：
+ * 1. 把检索命中的 chunk 转成结构化 contexts。
+ * 2. 生成可直接交给 LLM 的 llmContext。
+ * 3. 生成 references，并保证 refId 与 llmContext 中的 [ref_n] 对齐。
+ */
 export type ScoredKnowledgeChunk = {
   chunk: KnowledgeChunk;
   score: number;

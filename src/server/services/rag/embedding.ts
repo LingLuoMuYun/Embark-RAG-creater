@@ -2,6 +2,14 @@ import type { KnowledgeChunk } from "@/features/rag/types";
 
 const MOCK_EMBEDDING_DIMENSION = 64;
 
+/**
+ * embedding 生成模块。
+ *
+ * 职责：
+ * 1. 为 query 和 chunk 生成稳定的 mock 向量。
+ * 2. 保持和未来真实 embedding API 相同的调用入口。
+ * 3. 让当前 RAG 检索链路在没有 API Key 的情况下也能完整跑通。
+ */
 export type EmbeddingVector = number[];
 
 /**
@@ -33,6 +41,7 @@ export function embedChunk(chunk: KnowledgeChunk): EmbeddingVector {
   );
 }
 
+/** 将任意文本转换成固定维度的 mock embedding 向量。 */
 function embedText(text: string): EmbeddingVector {
   const vector = new Array<number>(MOCK_EMBEDDING_DIMENSION).fill(0);
   const tokens = tokenize(text);
@@ -46,6 +55,7 @@ function embedText(text: string): EmbeddingVector {
   return normalizeVector(vector);
 }
 
+/** 轻量分词：英文/数字按词，中文按相邻双字 bigram。 */
 function tokenize(input: string): string[] {
   const normalized = input.toLowerCase().trim();
   const asciiTokens = normalized.match(/[a-z0-9_]+/g) ?? [];
@@ -65,6 +75,7 @@ function tokenize(input: string): string[] {
   return [...asciiTokens, ...cjkTokens];
 }
 
+/** 将 token 稳定映射到固定维度向量中的某个位置。 */
 function hashToken(token: string): number {
   let hash = 0;
 
@@ -76,6 +87,7 @@ function hashToken(token: string): number {
   return hash;
 }
 
+/** 对向量做 L2 归一化，方便后续计算余弦相似度。 */
 function normalizeVector(vector: EmbeddingVector): EmbeddingVector {
   const magnitude = Math.sqrt(
     vector.reduce((sum, value) => sum + value * value, 0)

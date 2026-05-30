@@ -8,10 +8,12 @@ import type {
 type ChunkSource = "mock" | "database";
 
 /**
- * RAG 的知识片段读取层。
+ * RAG 知识片段读取模块。
  *
- * 默认使用 mock 数据保证本地闭环稳定；需要接真实入库数据时，
- * 设置 RAG_CHUNK_SOURCE=database，只替换这里的数据来源即可。
+ * 职责：
+ * 1. 屏蔽 mock 数据和真实数据库之间的数据来源差异。
+ * 2. 把当前 Prisma schema 中的 KnowledgeChunk 转成 RAG 对接文档里的 KnowledgeChunk。
+ * 3. 让 retriever 只依赖统一的领域类型，不关心底层数据来自哪里。
  */
 export async function listKnowledgeChunks(
   scope: RagRetrieveScope
@@ -23,10 +25,12 @@ export async function listKnowledgeChunks(
   return mockKnowledgeChunks;
 }
 
+/** 根据环境变量决定读取 mock 数据还是读取真实数据库。 */
 function getChunkSource(): ChunkSource {
   return process.env.RAG_CHUNK_SOURCE === "database" ? "database" : "mock";
 }
 
+/** 从 Prisma 读取真实 chunk，并适配成 RAG 统一的 KnowledgeChunk 字段。 */
 async function listDatabaseKnowledgeChunks(
   scope: RagRetrieveScope
 ): Promise<KnowledgeChunk[]> {
@@ -84,6 +88,7 @@ async function listDatabaseKnowledgeChunks(
   }));
 }
 
+/** 将入库侧 sourceType 适配成 RAG 对接文档约定的来源类型。 */
 function normalizeSourceType(sourceType: string): KnowledgeSourceType {
   if (sourceType === "manual") return "manual";
   if (sourceType === "file") return "file";

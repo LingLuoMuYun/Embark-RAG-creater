@@ -5,6 +5,14 @@ import {
 import { retrieveRagContexts } from "@/server/services/rag/retriever";
 import type { RagContext } from "@/features/rag/types";
 
+/**
+ * RAG 离线评测模块。
+ *
+ * 职责：
+ * 1. 使用固定 eval cases 调用检索主流程。
+ * 2. 计算 Hit@K、Recall@K、MRR@K 和平均耗时。
+ * 3. 为后续 BM25、混合检索、rerank 等策略调整提供量化对比。
+ */
 export type RetrievalEvalCaseResult = {
   id: string;
   query: string;
@@ -84,6 +92,7 @@ export async function evaluateRetrieval(
   };
 }
 
+/** 将评测结果格式化成适合命令行或日志展示的文本。 */
 export function formatEvaluationReport(report: RetrievalEvalReport): string {
   const lines = [
     `RAG retrieval evaluation @${report.k}`,
@@ -107,6 +116,7 @@ export function formatEvaluationReport(report: RetrievalEvalReport): string {
   return lines.join("\n");
 }
 
+/** 把期望命中的 chunkId/knowledgeId 统一成可比较的 key。 */
 function getExpectedKeys(evalCase: RetrievalEvalCase): Set<string> {
   return new Set([
     ...(evalCase.expectedChunkIds ?? []).map((id) => `chunk:${id}`),
@@ -114,15 +124,18 @@ function getExpectedKeys(evalCase: RetrievalEvalCase): Set<string> {
   ]);
 }
 
+/** 把实际返回的 context 转成可和 expectedKeys 比较的 key。 */
 function toContextKeySet(context: RagContext): string[] {
   return [`chunk:${context.chunkId}`, `knowledge:${context.knowledgeId}`];
 }
 
+/** 计算平均值；空数组返回 0，避免评测集为空时报错。 */
 function average(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+/** 统一指标展示精度。 */
 function formatMetric(value: number): string {
   return value.toFixed(3);
 }
