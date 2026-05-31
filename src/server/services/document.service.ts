@@ -169,6 +169,12 @@ export async function parseDocument(id: string): Promise<{
 
     const content = await parseFileContent(buffer, doc.fileType);
 
+    // 内容未变更则跳过重新切分（重新解析同一文件时）
+    if (doc.content === content && doc.status === "parsed") {
+      await updateDocumentStatus(id, "parsed");
+      return { content, chunkCount: doc.chunkCount };
+    }
+
     // 向量化语义分段优先，失败退回机械切分
     const semanticChunks = await splitTextSemantic(content);
     const chunks = semanticChunks ?? splitTextIntoChunks(content);
@@ -212,8 +218,12 @@ export async function updateDocumentContent(id: string, content: string) {
   const doc = await prisma.documentSource.findUnique({ where: { id } });
   if (!doc) return null;
 
-  // Re-split the updated content into chunks
-  const chunks = splitTextIntoChunks(content);
+  // 内容未变更则跳过切分
+  if (doc.content === content) return doc;
+
+  // 语义分段优先，失败退回机械切分
+  const semanticChunks = await splitTextSemantic(content);
+  const chunks = semanticChunks ?? splitTextIntoChunks(content);
 
   await prisma.$transaction(async (tx) => {
     await tx.documentChunk.deleteMany({ where: { documentSourceId: id } });
