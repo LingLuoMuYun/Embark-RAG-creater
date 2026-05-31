@@ -35,8 +35,8 @@ import {
   createKnowledgeDocument,
   deleteKnowledgeDocument,
   fetchRagDetail,
-} from "./api";
-import type { RagChunk, RagDoc } from "./types";
+} from "@/features/knowledge-bases/api";
+import type { RagChunk, RagDoc } from "@/features/knowledge-bases/types";
 import {
   formatFileSize,
   getTotalChunkCount,
@@ -44,7 +44,7 @@ import {
   normalizeRagDoc,
   normalizeRagItem,
   validateUploadFile,
-} from "./utils";
+} from "@/features/knowledge-bases/utils";
 
 type KnowledgeDocumentsDialogProps = {
   open: boolean;
@@ -327,7 +327,9 @@ export function KnowledgeDocumentsDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>查看知识 - {selected?.name ?? "未命名知识库"}</DialogTitle>
+            <DialogTitle>
+              查看知识 - {selected?.name ?? "未命名知识库"}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-col gap-4">
@@ -419,7 +421,8 @@ export function KnowledgeDocumentsDialog({
             <AlertDialogTitle>确认删除文档</AlertDialogTitle>
             <AlertDialogDescription>
               确定要从「{selected?.name ?? "未命名知识库"}」中删除「
-              {deleteDocTarget?.name ?? "未命名文档"}」吗？删除后该文档和关联分片会从数据库中移除。
+              {deleteDocTarget?.name ?? "未命名文档"}
+              」吗？删除后该文档和关联分片会从数据库中移除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

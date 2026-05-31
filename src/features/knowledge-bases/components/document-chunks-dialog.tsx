@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { RagChunk, RagDoc } from "./types";
+import type { RagChunk, RagDoc } from "@/features/knowledge-bases/types";
 
 type DocumentChunksDialogProps = {
   open: boolean;

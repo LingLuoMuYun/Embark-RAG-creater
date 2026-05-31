@@ -1,6 +1,12 @@
 "use client";
 
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentType,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Archive,
   BookOpen,
@@ -68,7 +74,7 @@ import {
   fetchRagItems,
   updateKnowledgeBase,
 } from "./api";
-import { KnowledgeDocumentsDialog } from "./knowledge-documents-dialog";
+import { KnowledgeDocumentsDialog } from "@/features/knowledge-bases/components/knowledge-documents-dialog";
 import { mockRagItems } from "./mock-data";
 import {
   DEFAULT_KNOWLEDGE_BASE_FORM_VALUES,
@@ -143,7 +149,7 @@ function getStatusText(status: RagListItem["status"]) {
   return status === "active" ? "启用" : "禁用";
 }
 
-export function KnowledgeBaseManagement() {
+export function RagManage() {
   const didHydrate = useRef(false);
   const items = useAppStore((state) => state.items);
   const loading = useAppStore((state) => state.loading);
@@ -539,69 +545,69 @@ export function KnowledgeBaseManagement() {
                 }
               }}
             >
-            <CardHeader>
-              <CardTitle className="flex items-start gap-3">
-                <span
-                  className={cn(
-                    "flex size-10 shrink-0 items-center justify-center rounded-md",
-                    iconOption.className
-                  )}
-                >
-                  <KnowledgeBaseIcon />
+              <CardHeader>
+                <CardTitle className="flex items-start gap-3">
+                  <span
+                    className={cn(
+                      "flex size-10 shrink-0 items-center justify-center rounded-md",
+                      iconOption.className
+                    )}
+                  >
+                    <KnowledgeBaseIcon />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate">{item.name}</span>
+                    <CardDescription className="mt-1 line-clamp-2">
+                      {item.description}
+                    </CardDescription>
+                  </span>
+                </CardTitle>
+                <CardAction>
+                  <Badge variant="outline" className={statusClassName}>
+                    {getStatusText(item.status)}
+                  </Badge>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 p-4 pt-0">
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>文档：{item.documentCount}</div>
+                  <div>Chunks：{item.chunkCount}</div>
+                  <div>TopK：{item.topK}</div>
+                  <div>阈值：{item.similarityThreshold}</div>
+                </div>
+              </CardContent>
+              <CardFooter className="justify-between gap-3">
+                <span className="text-xs text-muted-foreground">
+                  更新时间：{formatDate(item.updatedAt)}
                 </span>
-                <span className="min-w-0">
-                  <span className="block truncate">{item.name}</span>
-                  <CardDescription className="mt-1 line-clamp-2">
-                    {item.description}
-                  </CardDescription>
-                </span>
-              </CardTitle>
-              <CardAction>
-                <Badge variant="outline" className={statusClassName}>
-                  {getStatusText(item.status)}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 p-4 pt-0">
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>文档：{item.documentCount}</div>
-                <div>Chunks：{item.chunkCount}</div>
-                <div>TopK：{item.topK}</div>
-                <div>阈值：{item.similarityThreshold}</div>
-              </div>
-            </CardContent>
-            <CardFooter className="justify-between gap-3">
-              <span className="text-xs text-muted-foreground">
-                更新时间：{formatDate(item.updatedAt)}
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-3"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openEditDialog(item);
-                  }}
-                >
-                  编辑
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  className="h-9 px-3"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setDeleteTarget(item);
-                  }}
-                >
-                  删除
-                </Button>
-              </div>
-            </CardFooter>
-          </Card>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-3"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openEditDialog(item);
+                    }}
+                  >
+                    编辑
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="h-9 px-3"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setDeleteTarget(item);
+                    }}
+                  >
+                    删除
+                  </Button>
+                </div>
+              </CardFooter>
+            </Card>
           );
         })}
       </div>
