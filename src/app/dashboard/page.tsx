@@ -1,8 +1,10 @@
 import Link from "next/link";
 
 import { ActivityHeatmap } from "@/features/analytics/components/activity-heatmap";
+import { CategoryDistribution } from "@/features/analytics/components/category-distribution";
 import { PlaceholderPanel } from "@/features/analytics/components/placeholder-panel";
 import { RecentDocuments } from "@/features/analytics/components/recent-documents";
+import { RecentKnowledgeList } from "@/features/analytics/components/recent-knowledge-list";
 import { StatCard } from "@/features/analytics/components/stat-card";
 import { StatusBreakdown } from "@/features/analytics/components/status-breakdown";
 import { getAnalyticsOverview } from "@/server/services/analytics.service";
@@ -80,6 +82,11 @@ export default async function DashboardPage() {
             value={totals.noHitQueries}
             description="RAG 未命中的用户问题数量"
           />
+          <StatCard
+            label="待确认知识"
+            value={totals.pendingKnowledge}
+            description="status 为 pending 的知识条目"
+          />
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -96,6 +103,11 @@ export default async function DashboardPage() {
             title="Agent 状态分布"
             items={overview.statusBreakdown.agents}
           />
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <RecentKnowledgeList items={overview.recentKnowledge} />
+          <CategoryDistribution items={overview.categoryDistribution} />
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
