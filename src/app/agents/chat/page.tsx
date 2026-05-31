@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
-import type { ChatCitation, ChatMessageDTO } from "@/features/agent/agent-chat.types";
+import type {
+  ChatCitation,
+  ChatMessageDTO,
+} from "@/features/agent/agent-chat.types";
 
 type AgentItem = {
   id: string;
@@ -17,7 +21,7 @@ type UiMessage = Omit<ChatMessageDTO, "id" | "createdAt"> & {
   pending?: boolean;
 };
 
-type LlmInterfaceKey = "default" | "openai" | "local";
+type ChatMode = "openai" | "agent" | "rag-openai" | "rag-agent";
 
 type AgentListResponse = {
   success: boolean;
@@ -34,37 +38,45 @@ type MessageListResponse = {
   data?: ChatMessageDTO[];
 };
 
-const LLM_INTERFACE_OPTIONS: Array<{ value: LlmInterfaceKey; label: string }> =
-  [
-    { value: "default", label: "默认" },
-    { value: "openai", label: "OpenAI" },
-    { value: "local", label: "本地" },
-  ];
+const CHAT_MODE_OPTIONS: Array<{ value: ChatMode; label: string }> = [
+  { value: "openai", label: "OpenAI" },
+  { value: "agent", label: "Agent" },
+  { value: "rag-openai", label: "RAG + OpenAI" },
+  { value: "rag-agent", label: "RAG + Agent" },
+];
 
 export default function AgentChatPage() {
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [agentId, setAgentId] = useState("");
-  const [llmInterface, setLlmInterface] =
-    useState<LlmInterfaceKey>("default");
+  const [chatMode, setChatMode] = useState<ChatMode>("openai");
   const [menuOpen, setMenuOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLElement>(null);
   const localMessageIdRef = useRef(0);
+  const shouldAutoScrollRef = useRef(true);
 
   const currentAgent = useMemo(
     () => agents.find((agent) => agent.id === agentId),
     [agents, agentId]
   );
-  const currentLlmInterface = useMemo(
+  const currentChatMode = useMemo(
     () =>
-      LLM_INTERFACE_OPTIONS.find((option) => option.value === llmInterface) ??
-      LLM_INTERFACE_OPTIONS[0],
-    [llmInterface]
+      CHAT_MODE_OPTIONS.find((option) => option.value === chatMode) ??
+      CHAT_MODE_OPTIONS[0],
+    [chatMode]
   );
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally used for long chat histories.
+  const messageVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 120,
+    overscan: 6,
+    getItemKey: (index) => messages[index]?.id ?? index,
+  });
 
   useEffect(() => {
     const initialAgentId = new URLSearchParams(window.location.search).get(
@@ -113,16 +125,30 @@ export default function AgentChatPage() {
   }, [conversationId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (shouldAutoScrollRef.current && messages.length > 0) {
+      messageVirtualizer.scrollToIndex(messages.length - 1, {
+        align: "end",
+      });
+    }
+  }, [messages, messageVirtualizer]);
+
+  function handleMessageScroll() {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const distanceToBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldAutoScrollRef.current = distanceToBottom < 120;
+  }
 
   async function sendMessage() {
     const message = input.trim();
-    if (!agentId || !message || loading) return;
+    if (!message || loading) return;
 
     setError(null);
     setLoading(true);
     setInput("");
+    shouldAutoScrollRef.current = true;
     localMessageIdRef.current += 1;
     const localId = localMessageIdRef.current;
 
@@ -141,11 +167,36 @@ export default function AgentChatPage() {
     };
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
 
+    const requiresAgent = chatMode === "agent" || chatMode === "rag-agent";
+    if (requiresAgent && !agentId) {
+      setMessages((prev) =>
+        prev.map((item) =>
+          item.id === assistantMessage.id
+            ? {
+                ...item,
+                content: "当前模式需要先创建并启用一个 Agent。",
+                pending: false,
+              }
+            : item
+        )
+      );
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch(`/api/agents/${agentId}/chat`, {
+      const endpoint =
+        chatMode === "rag-agent" ? `/api/agents/${agentId}/chat` : "/api/chat";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, conversationId, llmInterface }),
+        body: JSON.stringify({
+          message,
+          conversationId,
+          ...(agentId ? { agentId } : {}),
+          chatMode,
+          llmInterface: "openai",
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -206,14 +257,7 @@ export default function AgentChatPage() {
     setConversationId(undefined);
     setMessages([]);
     setError(null);
-  }
-
-  function handleAgentChange(nextAgentId: string) {
-    setAgentId(nextAgentId);
-    setConversationId(undefined);
-    setMessages([]);
-    setError(null);
-    setMenuOpen(false);
+    shouldAutoScrollRef.current = true;
   }
 
   return (
@@ -239,18 +283,43 @@ export default function AgentChatPage() {
           </div>
         </header>
 
-        <section className="flex-1 overflow-y-auto px-4 py-6 md:px-8">
-          <div className="mx-auto max-w-3xl space-y-4">
+        <section
+          ref={scrollContainerRef}
+          onScroll={handleMessageScroll}
+          className="flex-1 overflow-y-auto px-4 py-6 md:px-8"
+        >
+          <div className="mx-auto max-w-3xl">
             {messages.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-10 text-center text-sm leading-6 text-zinc-500">
                 输入问题后，系统会组装多轮记忆与 RAG 检索上下文，再生成带引用的回答。
               </div>
             ) : (
-              messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
-              ))
+              <div
+                className="relative w-full"
+                style={{
+                  height: `${messageVirtualizer.getTotalSize()}px`,
+                }}
+              >
+                {messageVirtualizer.getVirtualItems().map((virtualItem) => {
+                  const message = messages[virtualItem.index];
+                  if (!message) return null;
+
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      ref={messageVirtualizer.measureElement}
+                      data-index={virtualItem.index}
+                      className="absolute left-0 top-0 w-full py-2"
+                      style={{
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                    >
+                      <MessageBubble message={message} />
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            <div ref={bottomRef} />
           </div>
         </section>
 
@@ -271,53 +340,25 @@ export default function AgentChatPage() {
                   className="flex h-12 w-36 flex-col justify-center rounded-md border border-zinc-200 bg-white px-3 text-left outline-none hover:bg-zinc-50 focus:border-cyan-500 disabled:cursor-not-allowed disabled:bg-zinc-100"
                 >
                   <span className="truncate text-xs font-medium text-zinc-800">
-                    {currentAgent?.name || "选择 Agent"}
+                    {currentChatMode.label}
                   </span>
                   <span className="truncate text-[11px] text-zinc-400">
-                    {currentLlmInterface.label}
+                    {currentAgent?.name || "无 Agent"}
                   </span>
                 </button>
                 {menuOpen && (
                   <div className="absolute bottom-14 left-0 z-20 w-64 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg">
-                    <div className="border-b border-zinc-100 p-2">
-                      <p className="px-2 pb-1 text-[11px] font-medium text-zinc-400">
-                        Agent
-                      </p>
-                      {agents.length === 0 ? (
-                        <p className="px-2 py-2 text-xs text-zinc-400">
-                          暂无启用的 Agent
-                        </p>
-                      ) : (
-                        agents.map((agent) => (
-                          <button
-                            key={agent.id}
-                            type="button"
-                            onClick={() => handleAgentChange(agent.id)}
-                            className={`w-full truncate rounded-md px-2 py-2 text-left text-xs ${
-                              agent.id === agentId
-                                ? "bg-cyan-50 text-cyan-800"
-                                : "text-zinc-700 hover:bg-zinc-50"
-                            }`}
-                          >
-                            {agent.name}
-                          </button>
-                        ))
-                      )}
-                    </div>
                     <div className="p-2">
-                      <p className="px-2 pb-1 text-[11px] font-medium text-zinc-400">
-                        大模型接口
-                      </p>
-                      {LLM_INTERFACE_OPTIONS.map((option) => (
+                      {CHAT_MODE_OPTIONS.map((option) => (
                         <button
                           key={option.value}
                           type="button"
                           onClick={() => {
-                            setLlmInterface(option.value);
+                            setChatMode(option.value);
                             setMenuOpen(false);
                           }}
                           className={`w-full rounded-md px-2 py-2 text-left text-xs ${
-                            option.value === llmInterface
+                            option.value === chatMode
                               ? "bg-cyan-50 text-cyan-800"
                               : "text-zinc-700 hover:bg-zinc-50"
                           }`}
@@ -344,7 +385,7 @@ export default function AgentChatPage() {
               <button
                 type="button"
                 onClick={sendMessage}
-                disabled={!agentId || !input.trim() || loading}
+                disabled={!input.trim() || loading}
                 className="rounded-md bg-cyan-700 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
                 {loading ? "生成中" : "发送"}
