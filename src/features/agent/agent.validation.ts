@@ -63,7 +63,16 @@ export const agentCreateSchema = z.object({
   systemPrompt: z.string().trim().max(8000).optional(),
 });
 
-export const agentUpdateSchema = agentCreateSchema.partial();
+export const agentUpdateSchema = z.object({
+  name: z.string().trim().min(1, "Agent 名称不能为空").max(80).optional(),
+  description: z.string().trim().max(500).optional(),
+  answerStyle: z.string().trim().min(1).max(40).optional(),
+  knowledgeScope: agentKnowledgeScopeSchema.optional(),
+  showReferences: z.boolean().optional(),
+  allowKnowledgeCapture: z.boolean().optional(),
+  status: z.enum(["draft", "active", "disabled"]).optional(),
+  systemPrompt: z.string().trim().max(8000).optional(),
+});
 
 export type AgentCreateInput = z.infer<typeof agentCreateSchema>;
 export type AgentUpdateInput = z.infer<typeof agentUpdateSchema>;
