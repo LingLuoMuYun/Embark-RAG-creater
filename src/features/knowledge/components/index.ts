@@ -9,6 +9,10 @@ export { KnowledgeFilterBar } from "@/features/knowledge/components/knowledge-fi
 export type { KnowledgeFilterBarProps } from "@/features/knowledge/components/knowledge-filter-bar";
 export { KnowledgeSearchBox } from "@/features/knowledge/components/knowledge-search-box";
 export type { KnowledgeSearchBoxProps } from "@/features/knowledge/components/knowledge-search-box";
+export { RecentSearches } from "@/features/knowledge/components/recent-searches";
+export type { RecentSearchesProps } from "@/features/knowledge/components/recent-searches";
+export { SearchHighlight } from "@/features/knowledge/components/search-highlight";
+export type { SearchHighlightProps } from "@/features/knowledge/components/search-highlight";
 export { TagForm } from "@/features/knowledge/components/tag-form";
 export { TagManager } from "@/features/knowledge/components/tag-manager";
 export { TagMultiSelect } from "@/features/knowledge/components/tag-multi-select";

@@ -5,8 +5,12 @@
 export type {
   KnowledgeCategoryDto,
   KnowledgeCategoryFormValues,
+  KnowledgeFilterValue,
   KnowledgeTagDto,
   KnowledgeTagFormValues,
+  KnowledgeStatusFilter,
+  RecentKnowledgeSearch,
+  UseRecentKnowledgeSearchesOptions,
 } from "@/features/knowledge/types";
 
 export {
@@ -15,6 +19,8 @@ export {
   CategorySelect,
   KnowledgeFilterBar,
   KnowledgeSearchBox,
+  RecentSearches,
+  SearchHighlight,
   TagForm,
   TagManager,
   TagMultiSelect,
@@ -23,4 +29,8 @@ export {
 export type {
   KnowledgeFilterBarProps,
   KnowledgeSearchBoxProps,
+  RecentSearchesProps,
+  SearchHighlightProps,
 } from "@/features/knowledge/components";
+
+export { useRecentKnowledgeSearches } from "@/features/knowledge/hooks/use-recent-knowledge-searches";

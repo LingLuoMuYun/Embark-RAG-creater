@@ -47,3 +47,15 @@ export type KnowledgeFilterValue = {
   tagIds: string[];
   status?: KnowledgeStatusFilter;
 };
+
+/** 最近搜索记录条目。 */
+export type RecentKnowledgeSearch = {
+  keyword: string;
+  searchedAt: string;
+};
+
+/** 最近搜索记录 hook 的配置项。 */
+export type UseRecentKnowledgeSearchesOptions = {
+  storageKey?: string;
+  maxItems?: number;
+};
