@@ -2,7 +2,7 @@
 
 ## 1. 文档目标
 
-本文档基于 `docs/lzh/specs/rag.pase1.md`，用于指导 RAG 知识库管理 Phase 1 的前端实现。
+本文档基于 `docs/lzh/specs/rag.phase1.md`，用于指导 RAG 知识库管理 Phase 1 的前端实现。
 
 Phase 1 目标是完成 `/knowledge-bases` 页面中的知识库基础管理闭环：
 
@@ -46,7 +46,7 @@ type RagListItem = {
   id: string;
   name: string;
   description: string;
-  icon?: string;
+  icon: RagIconName;
   documentCount: number;
   chunkCount: number;
   topK: number;
@@ -60,6 +60,8 @@ type RagState = {
   items: RagListItem[];
 };
 ```
+
+`icon` 不再使用任意字符串，统一收敛为十个 lucide 图标枚举值，并通过该值派生卡片图标颜色。
 
 如果后端早期返回的是数组套数组，可以在接口适配层转换成对象数组，再写入 Zustand：
 
@@ -182,11 +184,23 @@ src/store/slices/knowledge-base-slice.ts
 ```ts
 export type RagStatus = "active" | "disabled";
 
+export type RagIconName =
+  | "Database"
+  | "BookOpen"
+  | "FileText"
+  | "Folder"
+  | "Archive"
+  | "Brain"
+  | "Bot"
+  | "GraduationCap"
+  | "BriefcaseBusiness"
+  | "Lightbulb";
+
 export type RagListItem = {
   id: string;
   name: string;
   description: string;
-  icon?: string;
+  icon: RagIconName;
   documentCount: number;
   chunkCount: number;
   topK: number;
@@ -226,6 +240,7 @@ export type RagDetail = RagListItem & {
 export type KnowledgeBaseFormValues = {
   name: string;
   description: string;
+  icon: RagIconName;
   topK: number;
   chunkSize: number;
   similarityThreshold: number;
@@ -239,12 +254,38 @@ export type KnowledgeBaseFormValues = {
 export const DEFAULT_KNOWLEDGE_BASE_FORM_VALUES = {
   name: "",
   description: "",
+  icon: "Database",
   topK: 5,
   chunkSize: 500,
   similarityThreshold: 0.7,
   status: "active",
 } satisfies KnowledgeBaseFormValues;
 ```
+
+### 5.3 图标配置
+
+建议在 `src/features/knowledge-bases/types.ts` 或 `utils.ts` 中维护统一配置，页面渲染和表单下拉框共用同一份数据：
+
+```ts
+export const RAG_ICON_OPTIONS = [
+  { value: "Database", label: "数据库", className: "text-blue-600 bg-blue-50" },
+  { value: "BookOpen", label: "知识", className: "text-emerald-600 bg-emerald-50" },
+  { value: "FileText", label: "文档", className: "text-cyan-600 bg-cyan-50" },
+  { value: "Folder", label: "文件夹", className: "text-yellow-600 bg-yellow-50" },
+  { value: "Archive", label: "归档", className: "text-orange-600 bg-orange-50" },
+  { value: "Brain", label: "智能", className: "text-purple-600 bg-purple-50" },
+  { value: "Bot", label: "Agent", className: "text-indigo-600 bg-indigo-50" },
+  { value: "GraduationCap", label: "学习", className: "text-pink-600 bg-pink-50" },
+  { value: "BriefcaseBusiness", label: "业务", className: "text-slate-600 bg-slate-50" },
+  { value: "Lightbulb", label: "经验", className: "text-amber-600 bg-amber-50" },
+] as const;
+```
+
+实现要求：
+
+- 图标组件从 `lucide-react` 引入，不手写 SVG。
+- 卡片图标、表单预览和下拉选项都从 `RAG_ICON_OPTIONS` 获取展示样式。
+- 兜底函数需要把未知 icon 归一为 `Database`。
 
 ---
 
@@ -467,6 +508,7 @@ export function normalizeRagItems(input: unknown): RagListItem[] {
 - `id` 缺失时生成前端 id。
 - `name` 缺失时使用 `未命名知识库`。
 - `description` 缺失时使用 `暂无描述`。
+- `icon` 缺失或不是十个可选值时使用 `Database`。
 - `documentCount` 缺失或非数字时使用 `0`。
 - `chunkCount` 缺失或非数字时使用 `0`。
 - `topK` 缺失或非数字时使用 `0`。
@@ -554,6 +596,7 @@ Zustand items
 
 - `name`
 - `description`
+- `icon`
 - `topK`
 - `chunkSize`
 - `similarityThreshold`
@@ -563,10 +606,17 @@ Zustand items
 
 - `name = ""`
 - `description = ""`
+- `icon = "Database"`
 - `topK = 5`
 - `chunkSize = 500`
 - `similarityThreshold = 0.7`
 - `status = "active"`
+
+图标字段使用下拉框实现：
+
+- 选项来自 `RAG_ICON_OPTIONS`。
+- 下拉项展示图标、中文标签和浅色样式预览。
+- 保存时只写入 `RagIconName` 字符串，不额外保存颜色字段。
 
 ### 13.3 校验规则
 
@@ -641,7 +691,7 @@ setDeleteTargetId(knowledgeBase.id)
 
 - 名称
 - 描述
-- 图标
+- 图标，使用 `icon` 对应的 lucide 图标和浅色样式
 - 文档数量
 - Chunks 数量
 - TopK
@@ -653,12 +703,28 @@ setDeleteTargetId(knowledgeBase.id)
 
 Phase 1 不展示 `查看知识` 按钮。
 
+卡片布局与交互建议：
+
+- 桌面端使用三列网格，例如 `grid-cols-1 md:grid-cols-2 xl:grid-cols-3`，宽屏下一行 3 张。
+- 卡片 padding 保持中等偏紧凑，指标区使用两列或紧凑 grid，避免大面积空白。
+- 卡片背景与页面底色做轻微区分，例如白色或浅灰背景、弱边框和轻阴影。
+- hover 时使用 `hover:scale-[1.01]`、`hover:shadow-md` 或边框变色，过渡控制在 `duration-200` 左右。
+- 编辑和删除按钮使用比小号按钮更大的尺寸，例如 `h-9 px-3`，并保留清晰的图标或文字。
+- 删除按钮仍使用危险色语义，不与卡片点击入口混淆。
+
 ### 15.2 状态样式
 
-- `active`：显示 `启用`，绿色、加粗。
-- `disabled`：显示 `禁用`，红色、加粗。
+- `active`：显示 `启用`，绿色、加粗，建议使用绿色文字和浅绿色背景。
+- `disabled`：显示 `禁用`，红色、加粗，建议使用红色文字和浅红色背景。
 
-### 15.3 空状态
+### 15.3 统计卡片样式
+
+- `知识库总量` 统计卡片 icon 使用蓝色系。
+- `启用知识库` 统计卡片 icon 使用绿色系。
+- `禁用知识库` 统计卡片 icon 使用红色系。
+- 三张统计卡片应保持相同结构，仅通过 icon 颜色和轻微背景色区分状态。
+
+### 15.4 空状态
 
 全部列表为空：
 
@@ -737,6 +803,12 @@ npm run build
 - 清空搜索输入后立即展示全部知识库。
 - 默认按更新时间倒序展示。
 - 排序倒置按钮能反转当前结果。
+- 三张统计卡片 icon 分别呈现蓝色、绿色、红色。
+- 新建和编辑弹窗可以通过下拉框选择十个预设 icon。
+- 保存 icon 后，知识库卡片图标和浅色样式同步更新。
+- 卡片列表在桌面端一行三张，内容不显得松散。
+- hover 知识库卡片时有轻微放大或阴影变化。
+- 知识库卡片右上角启用为绿色，禁用为红色。
 - 新建弹窗默认值正确。
 - 新建重名时展示错误。
 - 编辑时名称重复校验排除当前项。

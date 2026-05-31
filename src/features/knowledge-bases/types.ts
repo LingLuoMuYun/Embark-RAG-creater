@@ -1,10 +1,22 @@
 export type RagStatus = "active" | "disabled";
 
+export type RagIconName =
+  | "Database"
+  | "BookOpen"
+  | "FileText"
+  | "Folder"
+  | "Archive"
+  | "Brain"
+  | "Bot"
+  | "GraduationCap"
+  | "BriefcaseBusiness"
+  | "Lightbulb";
+
 export type RagListItem = {
   id: string;
   name: string;
   description: string;
-  icon?: string;
+  icon: RagIconName;
   documentCount: number;
   chunkCount: number;
   topK: number;
@@ -35,6 +47,7 @@ export type RagDetail = RagListItem;
 export type KnowledgeBaseFormValues = {
   name: string;
   description: string;
+  icon: RagIconName;
   topK: number;
   chunkSize: number;
   similarityThreshold: number;
@@ -48,6 +61,7 @@ export type StatusFilter = "all" | "active" | "disabled" | null;
 export const DEFAULT_KNOWLEDGE_BASE_FORM_VALUES = {
   name: "",
   description: "",
+  icon: "Database",
   topK: 5,
   chunkSize: 500,
   similarityThreshold: 0.7,

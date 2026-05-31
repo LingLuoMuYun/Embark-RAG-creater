@@ -1,5 +1,6 @@
 import type {
   KnowledgeBaseFormValues,
+  RagIconName,
   RagChunk,
   RagDoc,
   RagListItem,
@@ -27,6 +28,52 @@ function toStatus(value: unknown): RagStatus {
   return value === "active" || value === "disabled" ? value : "disabled";
 }
 
+export const RAG_ICON_OPTIONS = [
+  { value: "Database", label: "数据库", className: "text-blue-600 bg-blue-50" },
+  {
+    value: "BookOpen",
+    label: "知识",
+    className: "text-emerald-600 bg-emerald-50",
+  },
+  { value: "FileText", label: "文档", className: "text-cyan-600 bg-cyan-50" },
+  { value: "Folder", label: "文件夹", className: "text-yellow-600 bg-yellow-50" },
+  { value: "Archive", label: "归档", className: "text-orange-600 bg-orange-50" },
+  { value: "Brain", label: "智能", className: "text-purple-600 bg-purple-50" },
+  { value: "Bot", label: "Agent", className: "text-indigo-600 bg-indigo-50" },
+  {
+    value: "GraduationCap",
+    label: "学习",
+    className: "text-pink-600 bg-pink-50",
+  },
+  {
+    value: "BriefcaseBusiness",
+    label: "业务",
+    className: "text-slate-600 bg-slate-50",
+  },
+  { value: "Lightbulb", label: "经验", className: "text-amber-600 bg-amber-50" },
+] as const satisfies readonly {
+  value: RagIconName;
+  label: string;
+  className: string;
+}[];
+
+export function isRagIconName(value: unknown): value is RagIconName {
+  return RAG_ICON_OPTIONS.some((option) => option.value === value);
+}
+
+export function normalizeRagIcon(value: unknown): RagIconName {
+  return isRagIconName(value) ? value : "Database";
+}
+
+export function getRagIconOption(icon: unknown) {
+  const normalized = normalizeRagIcon(icon);
+
+  return (
+    RAG_ICON_OPTIONS.find((option) => option.value === normalized) ??
+    RAG_ICON_OPTIONS[0]
+  );
+}
+
 export function createClientId() {
   return `kb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -38,7 +85,7 @@ export function normalizeRagItem(input: unknown): RagListItem {
     id: toStringValue(item.id, createClientId()),
     name: toStringValue(item.name, "未命名知识库"),
     description: toStringValue(item.description, "暂无描述"),
-    icon: typeof item.icon === "string" ? item.icon : undefined,
+    icon: normalizeRagIcon(item.icon),
     documentCount: toNumberValue(item.documentCount, 0),
     chunkCount: toNumberValue(item.chunkCount, 0),
     topK: toNumberValue(item.topK, 0),

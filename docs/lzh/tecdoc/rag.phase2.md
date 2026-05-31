@@ -6,8 +6,7 @@
 
 Phase 2 目标是在 Phase 1 已完成的 `/knowledge-bases` 页面基础上，补充单个知识库下的文档与分片管理能力：
 
-- 在知识库卡片中新增 `查看知识` 操作。
-- 点击后打开当前知识库的知识文档管理弹窗。
+- 点击知识库卡片主体打开当前知识库的知识文档管理弹窗。
 - 弹窗中支持单文件上传 mock。
 - 上传后生成文档记录和 2-3 条 mock 分片。
 - 文档列表保存在 `selectedDocs`。
@@ -71,7 +70,7 @@ src/features/knowledge-bases/document-chunks-dialog.tsx
 
 职责说明：
 
-- `knowledge-base-management.tsx`：继续作为页面容器，负责知识库列表、卡片、打开文档弹窗。
+- `knowledge-base-management.tsx`：继续作为页面容器，负责知识库列表、卡片主体点击、打开文档弹窗。
 - `knowledge-documents-dialog.tsx`：负责 `查看知识` 弹窗、文档列表、删除文档确认框。
 - `document-upload-zone.tsx`：负责点击选择文件、拖拽上传、文件校验和上传错误展示。
 - `document-chunks-dialog.tsx`：负责只读展示当前文档的分片。
@@ -281,10 +280,10 @@ const [chunksByDocumentId, setChunksByDocumentId] = useState<
 
 ## 7. 查看知识数据流
 
-点击知识库卡片 `查看知识`：
+点击知识库卡片主体：
 
 ```text
-用户点击查看知识
+用户点击知识库卡片主体
 → setSelectedId(item.id)
 → setSelected(item)
 → setSelectedDocs([])
@@ -293,6 +292,13 @@ const [chunksByDocumentId, setChunksByDocumentId] = useState<
 ```
 
 当前阶段初次打开某个知识库时文档列表为空。
+
+按钮事件处理要求：
+
+- `编辑` 和 `删除` 按钮继续保留在卡片底部。
+- 卡片不再展示 `查看知识` 按钮。
+- `编辑` 和 `删除` 按钮点击事件需要调用 `event.stopPropagation()`。
+- 键盘可访问性建议：卡片主体支持 `Enter` 打开查看知识，按钮仍保持自身语义。
 
 如实现模拟详情请求，可以封装：
 
@@ -585,8 +591,9 @@ npm run build
 
 人工验证：
 
-- 知识库卡片出现 `查看知识` 按钮。
-- 点击 `查看知识` 打开弹窗，标题包含当前知识库名称。
+- 知识库卡片不出现 `查看知识` 按钮。
+- 点击知识库卡片主体打开弹窗，标题包含当前知识库名称。
+- 点击卡片内的 `编辑` 和 `删除` 按钮不会打开查看知识弹窗。
 - 初次打开文档列表为空。
 - 点击上传区域可以选择文件。
 - 拖拽单个合法文件可以上传。

@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Archive,
   BookOpen,
+  Bot,
+  Brain,
+  BriefcaseBusiness,
   CheckCircle2,
   Database,
+  FileText,
+  Folder,
+  GraduationCap,
+  Lightbulb,
   Plus,
   Search,
   SortAsc,
@@ -60,6 +68,7 @@ import { mockRagItems } from "./mock-data";
 import {
   DEFAULT_KNOWLEDGE_BASE_FORM_VALUES,
   type KnowledgeBaseFormValues,
+  type RagIconName,
   type RagListItem,
   type SortDirection,
   type SortField,
@@ -69,29 +78,49 @@ import {
   createClientId,
   filterAndSortRagItems,
   getKnowledgeBaseStats,
+  getRagIconOption,
   normalizeRagItems,
+  normalizeRagIcon,
+  RAG_ICON_OPTIONS,
   validateKnowledgeBaseForm,
 } from "./utils";
+
+const RAG_ICON_COMPONENTS = {
+  Database,
+  BookOpen,
+  FileText,
+  Folder,
+  Archive,
+  Brain,
+  Bot,
+  GraduationCap,
+  BriefcaseBusiness,
+  Lightbulb,
+} satisfies Record<RagIconName, ComponentType<{ className?: string }>>;
 
 const statusFilterCards: Array<{
   key: Exclude<StatusFilter, null>;
   title: string;
   description: string;
+  iconClassName: string;
 }> = [
   {
     key: "all",
     title: "知识库总量",
     description: "全部知识库",
+    iconClassName: "text-blue-600 bg-blue-50",
   },
   {
     key: "active",
     title: "启用知识库",
     description: "当前可用于检索",
+    iconClassName: "text-emerald-600 bg-emerald-50",
   },
   {
     key: "disabled",
     title: "禁用知识库",
     description: "暂不可用于检索",
+    iconClassName: "text-red-600 bg-red-50",
   },
 ];
 
@@ -211,6 +240,7 @@ export function KnowledgeBaseManagement() {
     setFormValues({
       name: item.name,
       description: item.description,
+      icon: normalizeRagIcon(item.icon),
       topK: item.topK,
       chunkSize: item.chunkSize,
       similarityThreshold: item.similarityThreshold,
@@ -254,6 +284,7 @@ export function KnowledgeBaseManagement() {
         id: createClientId(),
         name: formValues.name.trim(),
         description: formValues.description.trim() || "暂无描述",
+        icon: formValues.icon,
         documentCount: 0,
         chunkCount: 0,
         topK: formValues.topK,
@@ -268,6 +299,7 @@ export function KnowledgeBaseManagement() {
       updateItem(editingItem.id, {
         name: formValues.name.trim(),
         description: formValues.description.trim() || "暂无描述",
+        icon: formValues.icon,
         topK: formValues.topK,
         chunkSize: formValues.chunkSize,
         similarityThreshold: formValues.similarityThreshold,
@@ -350,7 +382,14 @@ export function KnowledgeBaseManagement() {
             >
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Icon />
+                  <span
+                    className={cn(
+                      "flex size-9 items-center justify-center rounded-md",
+                      card.iconClassName
+                    )}
+                  >
+                    <Icon />
+                  </span>
                   {card.title}
                 </CardTitle>
                 <CardDescription>{card.description}</CardDescription>
@@ -458,13 +497,39 @@ export function KnowledgeBaseManagement() {
         </Card>
       ) : null}
 
-      <div className="grid gap-3 xl:grid-cols-2">
-        {visibleItems.map((item) => (
-          <Card key={item.id}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {visibleItems.map((item) => {
+          const iconOption = getRagIconOption(item.icon);
+          const KnowledgeBaseIcon = RAG_ICON_COMPONENTS[iconOption.value];
+          const statusClassName =
+            item.status === "active"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-red-200 bg-red-50 text-red-700";
+
+          return (
+            <Card
+              key={item.id}
+              className="cursor-pointer border-slate-200 bg-white shadow-sm transition duration-200 hover:scale-[1.01] hover:border-slate-300 hover:shadow-md"
+              role="button"
+              tabIndex={0}
+              onClick={() => openDocumentsDialog(item)}
+              onKeyDown={(event) => {
+                if (event.currentTarget !== event.target) return;
+
+                if (event.key === "Enter") {
+                  openDocumentsDialog(item);
+                }
+              }}
+            >
             <CardHeader>
               <CardTitle className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
-                  <Database />
+                <span
+                  className={cn(
+                    "flex size-10 shrink-0 items-center justify-center rounded-md",
+                    iconOption.className
+                  )}
+                >
+                  <KnowledgeBaseIcon />
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate">{item.name}</span>
@@ -474,17 +539,13 @@ export function KnowledgeBaseManagement() {
                 </span>
               </CardTitle>
               <CardAction>
-                <Badge
-                  variant={
-                    item.status === "active" ? "secondary" : "destructive"
-                  }
-                >
+                <Badge variant="outline" className={statusClassName}>
                   {getStatusText(item.status)}
                 </Badge>
               </CardAction>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <div className="grid gap-3 text-sm md:grid-cols-4">
+            <CardContent className="flex flex-col gap-3 p-4 pt-0">
+              <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>文档：{item.documentCount}</div>
                 <div>Chunks：{item.chunkCount}</div>
                 <div>TopK：{item.topK}</div>
@@ -500,31 +561,31 @@ export function KnowledgeBaseManagement() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => openEditDialog(item)}
+                  className="h-9 px-3"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openEditDialog(item);
+                  }}
                 >
                   编辑
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openDocumentsDialog(item)}
-                >
-                  <BookOpen data-icon="inline-start" />
-                  查看知识
-                </Button>
-                <Button
-                  type="button"
                   variant="destructive"
                   size="sm"
-                  onClick={() => setDeleteTarget(item)}
+                  className="h-9 px-3"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setDeleteTarget(item);
+                  }}
                 >
                   删除
                 </Button>
               </div>
             </CardFooter>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog
@@ -562,6 +623,43 @@ export function KnowledgeBaseManagement() {
                   updateFormValue("description", event.target.value)
                 }
               />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="knowledge-base-icon">图标</Label>
+              <Select
+                value={formValues.icon}
+                onValueChange={(value) =>
+                  updateFormValue("icon", normalizeRagIcon(value))
+                }
+              >
+                <SelectTrigger id="knowledge-base-icon">
+                  <SelectValue placeholder="选择图标" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {RAG_ICON_OPTIONS.map((option) => {
+                      const Icon = RAG_ICON_COMPONENTS[option.value];
+
+                      return (
+                        <SelectItem key={option.value} value={option.value}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className={cn(
+                                "flex size-6 items-center justify-center rounded",
+                                option.className
+                              )}
+                            >
+                              <Icon />
+                            </span>
+                            {option.label}
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
