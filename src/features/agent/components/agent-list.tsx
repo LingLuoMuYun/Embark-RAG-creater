@@ -447,14 +447,23 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
                         >
                           {validationState?.loading ? "检查中" : "检查"}
                         </button>
-                        <button
-                          type="button"
-                          disabled
-                          title="对话模块尚未接入，暂不跳转不存在页面"
-                          className="rounded px-2 py-1 text-xs font-medium text-zinc-400"
-                        >
-                          对话
-                        </button>
+                        {agent.status === "active" ? (
+                          <a
+                            href={`/agents/chat?agentId=${agent.id}`}
+                            className="rounded px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                          >
+                            对话
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            title="只有启用状态的 Agent 可以进入对话"
+                            className="rounded px-2 py-1 text-xs font-medium text-zinc-400"
+                          >
+                            对话
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDelete(agent)}
