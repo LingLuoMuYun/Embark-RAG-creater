@@ -7,7 +7,7 @@ import {
   documentListQuerySchema,
 } from "@/features/knowledge-bases/server/schemas";
 import { handleRouteError, successResponse } from "@/lib/api-response";
-
+// 获取文档列表;
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     return handleRouteError(error);
   }
 }
-
+// 创建知识文档。
 export async function POST(request: Request) {
   try {
     const input = createKnowledgeDocumentSchema.parse(await request.json());

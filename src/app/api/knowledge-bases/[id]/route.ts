@@ -11,7 +11,7 @@ import { handleRouteError, successResponse } from "@/lib/api-response";
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
-
+// 更新指定知识库;
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
@@ -24,7 +24,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return handleRouteError(error);
   }
 }
-
+// 删除指定知识库;
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);

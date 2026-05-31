@@ -11,7 +11,7 @@ import { handleRouteError, successResponse } from "@/lib/api-response";
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
-
+// 将一批已有文档绑定到知识库
 export async function POST(request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
@@ -26,7 +26,7 @@ export async function POST(request: Request, context: RouteContext) {
     return handleRouteError(error);
   }
 }
-
+// 将一批文档从知识库解绑;
 export async function DELETE(request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);

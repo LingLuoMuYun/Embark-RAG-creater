@@ -12,7 +12,7 @@ import { handleRouteError, successResponse } from "@/lib/api-response";
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
-
+// 获取单个文档详情;
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
@@ -23,7 +23,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return handleRouteError(error);
   }
 }
-
+// 更新文档元信息、内容、解析状态、启用状态等。
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
@@ -35,7 +35,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return handleRouteError(error);
   }
 }
-
+// 删除指定文档。
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);

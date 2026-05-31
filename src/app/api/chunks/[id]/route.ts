@@ -5,7 +5,7 @@ import { handleRouteError, successResponse } from "@/lib/api-response";
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
-
+// 删除单个知识分片。
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
