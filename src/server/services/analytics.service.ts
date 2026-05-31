@@ -3,6 +3,8 @@ import type { UsageLogCreateInput } from "@/features/analytics/analytics.validat
 
 const ACTIVITY_DAYS = 30;
 const RECENT_DOCUMENT_LIMIT = 5;
+const RECENT_KNOWLEDGE_LIMIT = 5;
+const UNCATEGORIZED_CATEGORY_ID = "__uncategorized__";
 
 export type AnalyticsOverview = Awaited<ReturnType<typeof getAnalyticsOverview>>;
 
@@ -137,6 +139,66 @@ export async function getHotKnowledge(limit = 10) {
   }));
 }
 
+export async function getRecentKnowledge(limit = 10) {
+  const documents = await prisma.knowledgeDocument.findMany({
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      knowledgeBaseId: true,
+      title: true,
+      sourceType: true,
+      status: true,
+      parseStatus: true,
+      createdAt: true,
+    },
+  });
+
+  return documents.map((document) => ({
+    id: document.id,
+    knowledgeBaseId: document.knowledgeBaseId,
+    title: document.title,
+    sourceType: document.sourceType,
+    status: document.status,
+    parseStatus: document.parseStatus,
+    createdAt: document.createdAt.toISOString(),
+  }));
+}
+
+/**
+ * 分类知识数量分布。
+ *
+ * 当前 KnowledgeDocument 尚未绑定 categoryId（待成员 A 联调），
+ * 因此有分类的 count 为 0，全部知识暂时归入「未分类」。
+ * A 在知识表增加 categoryId 后，只需更新本函数的计数逻辑即可。
+ */
+export async function getCategoryDistribution() {
+  const [categories, totalKnowledge] = await Promise.all([
+    prisma.knowledgeCategory.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    }),
+    prisma.knowledgeDocument.count(),
+  ]);
+
+  const items = categories.map((category) => ({
+    categoryId: category.id,
+    name: category.name,
+    color: category.color,
+    count: 0,
+  }));
+
+  if (totalKnowledge > 0) {
+    items.push({
+      categoryId: UNCATEGORIZED_CATEGORY_ID,
+      name: "未分类",
+      color: null,
+      count: totalKnowledge,
+    });
+  }
+
+  return items;
+}
+
 export async function getKnowledgeGaps(limit = 10) {
   const items = await prisma.usageLog.groupBy({
     by: ["query"],
@@ -182,6 +244,9 @@ export async function getAnalyticsOverview() {
     activityDocuments,
     hotKnowledge,
     knowledgeGaps,
+    pendingKnowledge,
+    recentKnowledge,
+    categoryDistribution,
   ] = await Promise.all([
     prisma.documentSource.count(),
     prisma.documentSource.count({ where: { status: "parsed" } }),
@@ -227,6 +292,9 @@ export async function getAnalyticsOverview() {
     }),
     getHotKnowledge(5),
     getKnowledgeGaps(5),
+    prisma.knowledgeDocument.count({ where: { status: "pending" } }),
+    getRecentKnowledge(RECENT_KNOWLEDGE_LIMIT),
+    getCategoryDistribution(),
   ]);
 
   return {
@@ -241,6 +309,7 @@ export async function getAnalyticsOverview() {
       activeAgents,
       usageLogs,
       noHitQueries,
+      pendingKnowledge,
     },
     statusBreakdown: {
       documents: normalizeStatusCounts(documentStatusGroups),
@@ -253,5 +322,7 @@ export async function getAnalyticsOverview() {
     documentActivity: buildActivityDays(activityDocuments),
     hotKnowledge,
     knowledgeGaps,
+    recentKnowledge,
+    categoryDistribution,
   };
 }
