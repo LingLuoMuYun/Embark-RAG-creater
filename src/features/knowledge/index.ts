@@ -13,7 +13,14 @@ export {
   CategoryForm,
   CategoryManager,
   CategorySelect,
+  KnowledgeFilterBar,
+  KnowledgeSearchBox,
   TagForm,
   TagManager,
   TagMultiSelect,
+} from "@/features/knowledge/components";
+
+export type {
+  KnowledgeFilterBarProps,
+  KnowledgeSearchBoxProps,
 } from "@/features/knowledge/components";
