@@ -226,4 +226,47 @@ model AgentMessage {
 
   @@index([conversationId])
   @@index([createdAt])
+model UsageLog {
+  id String @id @default(cuid())
+
+  /// Source of this usage event. First supported value: rag_retrieve.
+  source String @default("rag_retrieve")
+
+  query String
+  mode  String @default("balanced")
+
+  /// JSON string of RagRetrieveRequest.scope from docs/知识入库字段建议以及请求检索接口对接文档.md.
+  scope String
+
+  hitCount Int     @default(0)
+  noHit    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  references UsageReference[]
+
+  @@index([source])
+  @@index([noHit])
+  @@index([createdAt])
+}
+
+model UsageReference {
+  id         String @id @default(cuid())
+  usageLogId String
+
+  /// Fields mirror RagReference returned by POST /api/rag/retrieve.
+  knowledgeBaseId String
+  knowledgeId     String
+  chunkId         String
+  title           String
+  chunkType       String
+
+  createdAt DateTime @default(now())
+
+  usageLog UsageLog @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
+
+  @@index([usageLogId])
+  @@index([knowledgeId])
+  @@index([chunkId])
+  @@index([chunkType])
 }
