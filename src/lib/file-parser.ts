@@ -296,12 +296,27 @@ export async function parseFileContent(
     case "jpeg":
     case "webp":
     case "bmp": {
-      const { chatWithVision } = await import("@/lib/ai-extract");
-      const { IMAGE_DESCRIPTION_PROMPT } = await import(
-        "@/lib/prompts/extraction"
-      );
       const mime = fileType === "jpg" ? "image/jpeg" : `image/${fileType}`;
-      return chatWithVision(buffer, mime, IMAGE_DESCRIPTION_PROMPT);
+      try {
+        const { chatWithVision } = await import("@/lib/ai-extract");
+        const { IMAGE_DESCRIPTION_PROMPT } = await import(
+          "@/lib/prompts/extraction"
+        );
+        return await chatWithVision(buffer, mime, IMAGE_DESCRIPTION_PROMPT);
+      } catch {
+        // 多模态失败，兜底 OCR
+        const { createWorker } = await import("tesseract.js");
+        const worker = await createWorker("chi_sim+eng");
+        try {
+          const base64 = buffer.toString("base64");
+          const dataUrl = `data:${mime};base64,${base64}`;
+          const { data } = await worker.recognize(dataUrl);
+          const text = data.text.trim();
+          return text || "[图片无法识别]";
+        } finally {
+          await worker.terminate();
+        }
+      }
     }
 
     default:
