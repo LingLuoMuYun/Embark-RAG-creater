@@ -6,87 +6,64 @@ generator client {
 datasource db {
   provider = "sqlite"
 }
-
 model KnowledgeBase {
   id          String  @id @default(cuid())
   name        String  @unique
   description String?
-  icon        String?  @default("")
-  // 知识库处理配置
-  chunkSize           Int   @default(800)
-  chunkOverlap        Int   @default(100)
+
+  icon  String @default("Database")
+  color String @default("blue")
+
   similarityThreshold Float @default(0.7)
   topK                Int   @default(5)
 
-  // 知识库状态：active | disabled
   status String @default("active")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  documents KnowledgeDocument[]
-  chunks    KnowledgeChunk[]
+  documents KnowledgeBaseDocument[]
 
   @@index([status])
 }
-
 model KnowledgeDocument {
-  id              String @id @default(cuid())
-  knowledgeBaseId String
+  id    String @id @default(cuid())
+  title String
 
-  // 文档基础信息
-  title      String
-  sourceType String @default("manual") // manual | file | url | text
+  sourceType String @default("manual")
 
-  // 文件信息：手动录入时可以为空
   fileName String?
   fileUrl  String?
   mimeType String?
   fileSize Int?
 
-  // 解析后的原始文本
   rawContent String?
 
-  // 解析状态：pending | processing | success | failed
+  chunkSize    Int @default(800)
+  chunkOverlap Int @default(100)
+
   parseStatus String @default("pending")
-
-  // 业务状态：active | disabled
-  status String @default("active")
-
-  // 错误信息：解析失败、切片失败等场景使用
-  error String?
+  status      String @default("active")
+  error       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase   @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  chunks        KnowledgeChunk[]
+  knowledgeBases KnowledgeBaseDocument[]
+  chunks         KnowledgeChunk[]
 
-  @@index([knowledgeBaseId])
+  @@index([sourceType])
   @@index([parseStatus])
   @@index([status])
 }
 
-model KnowledgeChunk {
+model KnowledgeBaseDocument {
   id              String @id @default(cuid())
   knowledgeBaseId String
   documentId      String
 
-  // chunk 正文
-  content String
-
-  // 在原文中的顺序
-  chunkIndex Int
-
-  // 向量数据，SQLite 中先用 JSON 字符串保存
-  embedding String?
-
-  // 业务状态：active | disabled
-  status String @default("active")
-
-  // chunk 在 rawContent 中的位置
-  startIndex Int?
-  endIndex   Int?
+  status    String @default("active")
+  sortOrder Int    @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -94,8 +71,33 @@ model KnowledgeChunk {
   knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
   document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
+  @@unique([knowledgeBaseId, documentId])
   @@index([knowledgeBaseId])
   @@index([documentId])
   @@index([status])
-  @@index([knowledgeBaseId, status])
+}
+
+
+model KnowledgeChunk {
+  id         String @id @default(cuid())
+  documentId String
+
+  content    String
+  chunkIndex Int
+
+  embedding String?
+
+  status String @default("active")
+
+  startIndex Int?
+  endIndex   Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([status])
+  @@index([documentId, status])
 }

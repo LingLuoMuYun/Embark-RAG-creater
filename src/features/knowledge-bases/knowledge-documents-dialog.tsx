@@ -1,7 +1,7 @@
 "use client";
 
 import { FileText, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   AlertDialog,
@@ -31,12 +31,18 @@ import {
 import { useAppStore } from "@/store";
 import { DocumentChunksDialog } from "./document-chunks-dialog";
 import { DocumentUploadZone } from "./document-upload-zone";
+import {
+  createKnowledgeDocument,
+  deleteKnowledgeDocument,
+  fetchRagDetail,
+} from "./api";
 import type { RagChunk, RagDoc } from "./types";
 import {
-  createMockChunksForDocument,
-  createMockDocumentFromFile,
   formatFileSize,
   getTotalChunkCount,
+  normalizeRagChunk,
+  normalizeRagDoc,
+  normalizeRagItem,
   validateUploadFile,
 } from "./utils";
 
@@ -53,6 +59,60 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString();
 }
 
+function getFileExtension(fileName: string) {
+  const index = fileName.lastIndexOf(".");
+
+  return index >= 0 ? fileName.slice(index).toLowerCase() : "";
+}
+
+function getSourceTypeFromFile(file: File) {
+  const extension = getFileExtension(file.name);
+
+  if (extension === ".md" || extension === ".markdown") return "markdown";
+  if (extension === ".txt" || file.type.startsWith("text/")) return "text";
+
+  return "file";
+}
+
+async function readFileAsKnowledgeText(file: File) {
+  const sourceType = getSourceTypeFromFile(file);
+
+  if (sourceType !== "text" && sourceType !== "markdown") return "";
+
+  return file.text();
+}
+
+function createChunksFromText(rawContent: string) {
+  const content = rawContent.trim();
+
+  if (!content) return [];
+
+  const chunkSize = 800;
+  const chunkOverlap = 100;
+  const step = chunkSize - chunkOverlap;
+  const chunks: Array<{
+    content: string;
+    chunkIndex: number;
+    startIndex: number;
+    endIndex: number;
+  }> = [];
+
+  for (let startIndex = 0; startIndex < content.length; startIndex += step) {
+    const endIndex = Math.min(startIndex + chunkSize, content.length);
+
+    chunks.push({
+      content: content.slice(startIndex, endIndex),
+      chunkIndex: chunks.length,
+      startIndex,
+      endIndex,
+    });
+
+    if (endIndex >= content.length) break;
+  }
+
+  return chunks;
+}
+
 export function KnowledgeDocumentsDialog({
   open,
   onOpenChange,
@@ -63,9 +123,14 @@ export function KnowledgeDocumentsDialog({
   const selectedChunks = useAppStore((state) => state.selectedChunks);
   const setSelectedDocs = useAppStore((state) => state.setSelectedDocs);
   const setSelectedChunks = useAppStore((state) => state.setSelectedChunks);
+  const setSelected = useAppStore((state) => state.setSelected);
   const updateItem = useAppStore((state) => state.updateItem);
 
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteDocTarget, setDeleteDocTarget] = useState<RagDoc | null>(null);
   const [chunksDialogOpen, setChunksDialogOpen] = useState(false);
   const [activeChunkDoc, setActiveChunkDoc] = useState<RagDoc | null>(null);
@@ -79,19 +144,85 @@ export function KnowledgeDocumentsDialog({
     [chunksByDocumentId]
   );
 
-  function syncCounts(
-    nextDocs: RagDoc[],
-    nextChunks: Record<string, RagChunk[]>
-  ) {
+  const syncCounts = useCallback(
+    (nextDocs: RagDoc[], nextChunks: Record<string, RagChunk[]>) => {
+      if (!selectedId) return;
+
+      updateItem(selectedId, {
+        documentCount: nextDocs.length,
+        chunkCount: getTotalChunkCount(nextChunks),
+      });
+    },
+    [selectedId, updateItem]
+  );
+
+  useEffect(() => {
+    if (!open || !selectedId) return;
+
+    let ignore = false;
+
+    async function loadDocuments() {
+      if (!selectedId) return;
+
+      setDocumentsLoading(true);
+      setDocumentsError(null);
+
+      try {
+        const detail = await fetchRagDetail(selectedId);
+        const detailRecord =
+          detail && typeof detail === "object"
+            ? (detail as Record<string, unknown>)
+            : {};
+        const docsInput = Array.isArray(detailRecord.documents)
+          ? detailRecord.documents
+          : [];
+        const docs = docsInput.map(normalizeRagDoc);
+        const nextChunks = docsInput.reduce<Record<string, RagChunk[]>>(
+          (acc, docInput) => {
+            const doc = normalizeRagDoc(docInput);
+            const record =
+              docInput && typeof docInput === "object"
+                ? (docInput as Record<string, unknown>)
+                : {};
+            const chunks = Array.isArray(record.chunks)
+              ? record.chunks.map(normalizeRagChunk)
+              : [];
+
+            acc[doc.id] = chunks;
+            return acc;
+          },
+          {}
+        );
+
+        if (ignore) return;
+
+        setSelected(normalizeRagItem(detail));
+        setSelectedDocs(docs);
+        setChunksByDocumentId(nextChunks);
+        syncCounts(docs, nextChunks);
+      } catch (error) {
+        console.error("Failed to load knowledge base documents.", error);
+
+        if (!ignore) {
+          setDocumentsError("知识文档加载失败，请稍后重试");
+        }
+      } finally {
+        if (!ignore) {
+          setDocumentsLoading(false);
+        }
+      }
+    }
+
+    loadDocuments();
+
+    return () => {
+      ignore = true;
+    };
+  }, [open, selectedId, setSelected, setSelectedDocs, syncCounts]);
+
+  async function handleFilesSelected(files: FileList | File[]) {
     if (!selectedId) return;
 
-    updateItem(selectedId, {
-      documentCount: nextDocs.length,
-      chunkCount: getTotalChunkCount(nextChunks),
-    });
-  }
-
-  function handleFilesSelected(files: FileList | File[]) {
     const validationError = validateUploadFile({
       files,
       selectedDocs: safeDocs,
@@ -103,18 +234,48 @@ export function KnowledgeDocumentsDialog({
     }
 
     const [file] = Array.from(files);
-    const doc = createMockDocumentFromFile(file);
-    const chunks = createMockChunksForDocument(doc);
-    const nextDocs = [...safeDocs, doc];
-    const nextChunks = {
-      ...chunksByDocumentId,
-      [doc.id]: chunks,
-    };
-
+    setUploading(true);
     setUploadError(null);
-    setSelectedDocs(nextDocs);
-    setChunksByDocumentId(nextChunks);
-    syncCounts(nextDocs, nextChunks);
+
+    try {
+      const rawContent = await readFileAsKnowledgeText(file);
+      const chunks = createChunksFromText(rawContent);
+      const document = await createKnowledgeDocument({
+        title: file.name,
+        sourceType: getSourceTypeFromFile(file),
+        fileName: file.name,
+        mimeType: file.type || undefined,
+        fileSize: file.size,
+        rawContent,
+        parseStatus: rawContent ? "success" : "pending",
+        status: "active",
+        knowledgeBaseIds: [selectedId],
+        chunks,
+      });
+      const doc = normalizeRagDoc(document);
+      const normalizedChunks =
+        document && typeof document === "object"
+          ? Array.isArray((document as Record<string, unknown>).chunks)
+            ? ((document as Record<string, unknown>).chunks as unknown[]).map(
+                normalizeRagChunk
+              )
+            : []
+          : [];
+      const nextDocs = [...safeDocs, doc];
+      const nextChunks = {
+        ...chunksByDocumentId,
+        [doc.id]: normalizedChunks,
+      };
+
+      setSelectedDocs(nextDocs);
+      setChunksByDocumentId(nextChunks);
+      syncCounts(nextDocs, nextChunks);
+    } catch (error) {
+      console.error("Failed to upload document.", error);
+      setUploadError("文档上传失败，请稍后重试");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function openChunksDialog(doc: RagDoc) {
@@ -125,29 +286,40 @@ export function KnowledgeDocumentsDialog({
     setChunksDialogOpen(true);
   }
 
-  function confirmDeleteDocument() {
+  async function confirmDeleteDocument() {
     if (!deleteDocTarget) return;
 
-    const nextDocs = safeDocs.filter((doc) => doc.id !== deleteDocTarget.id);
-    const nextChunks = { ...chunksByDocumentId };
+    setDeleteSubmitting(true);
 
-    delete nextChunks[deleteDocTarget.id];
+    try {
+      await deleteKnowledgeDocument(deleteDocTarget.id);
 
-    const currentChunksBelongToDeletedDoc = selectedChunks.some(
-      (chunk) => chunk.documentId === deleteDocTarget.id
-    );
+      const nextDocs = safeDocs.filter((doc) => doc.id !== deleteDocTarget.id);
+      const nextChunks = { ...chunksByDocumentId };
 
-    setSelectedDocs(nextDocs);
-    setChunksByDocumentId(nextChunks);
+      delete nextChunks[deleteDocTarget.id];
 
-    if (currentChunksBelongToDeletedDoc) {
-      setSelectedChunks([]);
-      setActiveChunkDoc(null);
-      setChunksDialogOpen(false);
+      const currentChunksBelongToDeletedDoc = selectedChunks.some(
+        (chunk) => chunk.documentId === deleteDocTarget.id
+      );
+
+      setSelectedDocs(nextDocs);
+      setChunksByDocumentId(nextChunks);
+
+      if (currentChunksBelongToDeletedDoc) {
+        setSelectedChunks([]);
+        setActiveChunkDoc(null);
+        setChunksDialogOpen(false);
+      }
+
+      syncCounts(nextDocs, nextChunks);
+      setDeleteDocTarget(null);
+    } catch (error) {
+      console.error("Failed to delete document.", error);
+      setDocumentsError("文档删除失败，请稍后重试");
+    } finally {
+      setDeleteSubmitting(false);
     }
-
-    syncCounts(nextDocs, nextChunks);
-    setDeleteDocTarget(null);
   }
 
   return (
@@ -161,18 +333,29 @@ export function KnowledgeDocumentsDialog({
           <div className="flex flex-col gap-4">
             <DocumentUploadZone
               error={uploadError}
+              uploading={uploading}
               onFilesSelected={handleFilesSelected}
             />
+
+            {documentsError ? (
+              <div className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+                {documentsError}
+              </div>
+            ) : null}
 
             <Card>
               <CardHeader>
                 <CardTitle>知识文档</CardTitle>
                 <CardDescription>
-                  当前 {safeDocs.length} 个文档，{totalChunkCount} 个模拟分片
+                  当前 {safeDocs.length} 个文档，{totalChunkCount} 个分片
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {safeDocs.length === 0 ? (
+                {documentsLoading ? (
+                  <div className="py-10 text-center text-sm text-muted-foreground">
+                    正在加载知识文档...
+                  </div>
+                ) : safeDocs.length === 0 ? (
                   <div className="py-10 text-center text-sm text-muted-foreground">
                     暂无知识文档，上传文件后将在这里展示文档
                   </div>
@@ -236,7 +419,7 @@ export function KnowledgeDocumentsDialog({
             <AlertDialogTitle>确认删除文档</AlertDialogTitle>
             <AlertDialogDescription>
               确定要从「{selected?.name ?? "未命名知识库"}」中删除「
-              {deleteDocTarget?.name ?? "未命名文档"}」吗？删除后该文档和关联模拟分片会从当前知识库中移除。
+              {deleteDocTarget?.name ?? "未命名文档"}」吗？删除后该文档和关联分片会从数据库中移除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -245,7 +428,7 @@ export function KnowledgeDocumentsDialog({
               variant="destructive"
               onClick={confirmDeleteDocument}
             >
-              确认删除
+              {deleteSubmitting ? "删除中..." : "确认删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

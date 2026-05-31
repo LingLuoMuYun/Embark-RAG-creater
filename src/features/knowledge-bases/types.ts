@@ -20,7 +20,6 @@ export type RagListItem = {
   documentCount: number;
   chunkCount: number;
   topK: number;
-  chunkSize: number;
   similarityThreshold: number;
   status: RagStatus;
   updatedAt: string;
@@ -49,7 +48,6 @@ export type KnowledgeBaseFormValues = {
   description: string;
   icon: RagIconName;
   topK: number;
-  chunkSize: number;
   similarityThreshold: number;
   status: RagStatus;
 };
@@ -63,7 +61,6 @@ export const DEFAULT_KNOWLEDGE_BASE_FORM_VALUES = {
   description: "",
   icon: "Database",
   topK: 5,
-  chunkSize: 500,
   similarityThreshold: 0.7,
   status: "active",
 } satisfies KnowledgeBaseFormValues;

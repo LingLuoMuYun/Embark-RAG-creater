@@ -89,7 +89,6 @@ export function normalizeRagItem(input: unknown): RagListItem {
     documentCount: toNumberValue(item.documentCount, 0),
     chunkCount: toNumberValue(item.chunkCount, 0),
     topK: toNumberValue(item.topK, 0),
-    chunkSize: toNumberValue(item.chunkSize, 0),
     similarityThreshold: toNumberValue(item.similarityThreshold, 0),
     status: toStatus(item.status),
     updatedAt: toStringValue(item.updatedAt, "--"),
@@ -162,12 +161,6 @@ export function validateKnowledgeBaseForm(params: {
   if (!name) return "知识库名称不能为空";
   if (!Number.isInteger(params.values.topK) || params.values.topK <= 0) {
     return "TopK 必须为正整数";
-  }
-  if (
-    !Number.isInteger(params.values.chunkSize) ||
-    params.values.chunkSize <= 0
-  ) {
-    return "分片大小必须为正整数";
   }
   if (
     params.values.similarityThreshold < 0 ||

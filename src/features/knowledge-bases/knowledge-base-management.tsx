@@ -62,7 +62,12 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
-import { fetchRagItems } from "./api";
+import {
+  createKnowledgeBase,
+  deleteKnowledgeBase,
+  fetchRagItems,
+  updateKnowledgeBase,
+} from "./api";
 import { KnowledgeDocumentsDialog } from "./knowledge-documents-dialog";
 import { mockRagItems } from "./mock-data";
 import {
@@ -75,10 +80,10 @@ import {
   type StatusFilter,
 } from "./types";
 import {
-  createClientId,
   filterAndSortRagItems,
   getKnowledgeBaseStats,
   getRagIconOption,
+  normalizeRagItem,
   normalizeRagItems,
   normalizeRagIcon,
   RAG_ICON_OPTIONS,
@@ -168,6 +173,8 @@ export function KnowledgeBaseManagement() {
     DEFAULT_KNOWLEDGE_BASE_FORM_VALUES
   );
   const [formError, setFormError] = useState<string | null>(null);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -242,7 +249,6 @@ export function KnowledgeBaseManagement() {
       description: item.description,
       icon: normalizeRagIcon(item.icon),
       topK: item.topK,
-      chunkSize: item.chunkSize,
       similarityThreshold: item.similarityThreshold,
       status: item.status,
     });
@@ -265,7 +271,7 @@ export function KnowledgeBaseManagement() {
     }));
   }
 
-  function saveForm() {
+  async function saveForm() {
     const validationError = validateKnowledgeBaseForm({
       values: formValues,
       items,
@@ -277,45 +283,57 @@ export function KnowledgeBaseManagement() {
       return;
     }
 
-    const now = new Date().toISOString();
+    setFormSubmitting(true);
+    setFormError(null);
 
-    if (formDialogMode === "create") {
-      addItem({
-        id: createClientId(),
+    try {
+      const payload = {
         name: formValues.name.trim(),
-        description: formValues.description.trim() || "暂无描述",
-        icon: formValues.icon,
-        documentCount: 0,
-        chunkCount: 0,
-        topK: formValues.topK,
-        chunkSize: formValues.chunkSize,
-        similarityThreshold: formValues.similarityThreshold,
-        status: formValues.status,
-        updatedAt: now,
-      });
-    }
-
-    if (formDialogMode === "edit" && editingItem) {
-      updateItem(editingItem.id, {
-        name: formValues.name.trim(),
-        description: formValues.description.trim() || "暂无描述",
+        description: formValues.description.trim() || undefined,
         icon: formValues.icon,
         topK: formValues.topK,
-        chunkSize: formValues.chunkSize,
         similarityThreshold: formValues.similarityThreshold,
         status: formValues.status,
-        updatedAt: now,
-      });
-    }
+      };
 
-    closeFormDialog();
+      if (formDialogMode === "create") {
+        const created = normalizeRagItem(await createKnowledgeBase(payload));
+
+        addItem(created);
+      }
+
+      if (formDialogMode === "edit" && editingItem) {
+        const updated = normalizeRagItem(
+          await updateKnowledgeBase(editingItem.id, payload)
+        );
+
+        updateItem(editingItem.id, updated);
+      }
+
+      closeFormDialog();
+    } catch (error) {
+      console.error("Failed to save knowledge base.", error);
+      setFormError("知识库保存失败，请稍后重试");
+    } finally {
+      setFormSubmitting(false);
+    }
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!deleteTarget) return;
 
-    deleteItem(deleteTarget.id);
-    setDeleteTarget(null);
+    setDeleteSubmitting(true);
+
+    try {
+      await deleteKnowledgeBase(deleteTarget.id);
+      deleteItem(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (error) {
+      console.error("Failed to delete knowledge base.", error);
+      setError("知识库删除失败，请稍后重试");
+    } finally {
+      setDeleteSubmitting(false);
+    }
   }
 
   function openDocumentsDialog(item: RagListItem) {
@@ -662,7 +680,7 @@ export function KnowledgeBaseManagement() {
               </Select>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="kb-topk">TopK</Label>
                 <Input
@@ -672,18 +690,6 @@ export function KnowledgeBaseManagement() {
                   value={formValues.topK}
                   onChange={(event) =>
                     updateFormValue("topK", Number(event.target.value))
-                  }
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="kb-chunk-size">分片大小</Label>
-                <Input
-                  id="kb-chunk-size"
-                  type="number"
-                  min={1}
-                  value={formValues.chunkSize}
-                  onChange={(event) =>
-                    updateFormValue("chunkSize", Number(event.target.value))
                   }
                 />
               </div>
@@ -731,8 +737,8 @@ export function KnowledgeBaseManagement() {
             <Button type="button" variant="outline" onClick={closeFormDialog}>
               取消
             </Button>
-            <Button type="button" onClick={saveForm}>
-              确认
+            <Button type="button" onClick={saveForm} disabled={formSubmitting}>
+              {formSubmitting ? "保存中..." : "确认"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -754,7 +760,7 @@ export function KnowledgeBaseManagement() {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={confirmDelete}>
-              确认删除
+              {deleteSubmitting ? "删除中..." : "确认删除"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

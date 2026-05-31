@@ -8,11 +8,13 @@ import { cn } from "@/lib/utils";
 
 type DocumentUploadZoneProps = {
   error: string | null;
+  uploading?: boolean;
   onFilesSelected: (files: FileList | File[]) => void;
 };
 
 export function DocumentUploadZone({
   error,
+  uploading = false,
   onFilesSelected,
 }: DocumentUploadZoneProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -35,8 +37,10 @@ export function DocumentUploadZone({
         onDrop={(event) => {
           event.preventDefault();
           setIsDragging(false);
+          if (uploading) return;
           onFilesSelected(event.dataTransfer.files);
         }}
+        disabled={uploading}
       >
         <Upload className="text-muted-foreground" />
         <span className="text-sm font-medium">点击或拖拽文件上传</span>
@@ -44,7 +48,7 @@ export function DocumentUploadZone({
           支持 PDF、DOCX、TXT、Markdown，单文件不超过 20MB
         </span>
         <Button type="button" variant="outline" size="sm" asChild>
-          <span>选择文件</span>
+          <span>{uploading ? "上传中..." : "选择文件"}</span>
         </Button>
       </button>
 
