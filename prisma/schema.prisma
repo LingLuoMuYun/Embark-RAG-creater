@@ -95,12 +95,27 @@ model ChunkEmbedding {
   @@index([updatedAt])
 }
 
+/// 知识分类主数据，初版全局共享且暂不绑定具体知识条目。
 model KnowledgeCategory {
   id          String  @id @default(cuid())
   name        String  @unique
   description String?
   color       String?
   sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([createdAt])
+}
+
+/// 知识标签主数据，初版全局共享且暂不绑定具体知识条目。
+model KnowledgeTag {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  color     String?
+  sortOrder Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

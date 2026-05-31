@@ -1,56 +1,51 @@
 "use client";
 
 /**
- * 分类管理组件，封装分类查询、创建、编辑和删除的完整交互。
+ * 标签管理组件，封装标签查询、创建和删除的完整交互。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  createCategory,
-  deleteCategory,
-  fetchCategories,
-  updateCategory,
-} from "@/features/knowledge/api/categories";
-import { CategoryForm } from "@/features/knowledge/components/category-form";
+  createTag,
+  deleteTag,
+  fetchTags,
+} from "@/features/knowledge/api/tags";
+import { TagForm } from "@/features/knowledge/components/tag-form";
 import type {
-  KnowledgeCategoryDto,
-  KnowledgeCategoryFormValues,
+  KnowledgeTagDto,
+  KnowledgeTagFormValues,
 } from "@/features/knowledge/types";
 
-/** 分类管理组件参数。 */
-type CategoryManagerProps = {
+/** 标签管理组件参数。 */
+type TagManagerProps = {
   title?: string;
   description?: string;
 };
 
-/** 提供分类列表、创建、编辑和删除能力的可嵌入管理组件。 */
-export function CategoryManager({
-  title = "分类管理",
-  description = "维护知识分类，后续可接入知识列表筛选。",
-}: CategoryManagerProps) {
-  const [categories, setCategories] = useState<KnowledgeCategoryDto[]>([]);
+/** 提供标签列表、创建和删除能力的可嵌入管理组件。 */
+export function TagManager({
+  title = "标签管理",
+  description = "维护知识标签，后续可接入知识列表多选筛选。",
+}: TagManagerProps) {
+  const [tags, setTags] = useState<KnowledgeTagDto[]>([]);
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingCategory, setEditingCategory] =
-    useState<KnowledgeCategoryDto | null>(null);
 
   const trimmedKeyword = useMemo(() => keyword.trim(), [keyword]);
 
-  /** 按当前关键词从 API 刷新分类列表。 */
-  const loadCategories = useCallback(async () => {
+  /** 按当前关键词从 API 刷新标签列表。 */
+  const loadTags = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchCategories({ keyword: trimmedKeyword });
-      setCategories(data);
+      const data = await fetchTags({ keyword: trimmedKeyword });
+      setTags(data);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error ? loadError.message : "加载分类失败"
-      );
+      setError(loadError instanceof Error ? loadError.message : "加载标签失败");
     } finally {
       setLoading(false);
     }
@@ -58,59 +53,35 @@ export function CategoryManager({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- standard data fetching on mount/filter change
-    void loadCategories();
-  }, [loadCategories]);
+    void loadTags();
+  }, [loadTags]);
 
-  /** 创建分类并刷新列表。 */
-  const handleCreate = async (values: KnowledgeCategoryFormValues) => {
+  /** 创建标签并刷新列表。 */
+  const handleCreate = async (values: KnowledgeTagFormValues) => {
     setSubmitting(true);
     setError(null);
     try {
-      await createCategory(values);
+      await createTag(values);
       setShowCreateForm(false);
-      await loadCategories();
+      await loadTags();
     } catch (createError) {
-      setError(
-        createError instanceof Error ? createError.message : "创建分类失败"
-      );
+      setError(createError instanceof Error ? createError.message : "创建标签失败");
     } finally {
       setSubmitting(false);
     }
   };
 
-  /** 更新当前编辑中的分类并刷新列表。 */
-  const handleUpdate = async (values: KnowledgeCategoryFormValues) => {
-    if (!editingCategory) return;
+  /** 二次确认后删除指定标签并刷新列表。 */
+  const handleDelete = async (tag: KnowledgeTagDto) => {
+    if (!window.confirm(`确定删除标签“${tag.name}”吗？`)) return;
 
     setSubmitting(true);
     setError(null);
     try {
-      await updateCategory(editingCategory.id, values);
-      setEditingCategory(null);
-      await loadCategories();
-    } catch (updateError) {
-      setError(
-        updateError instanceof Error ? updateError.message : "更新分类失败"
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  /** 二次确认后删除指定分类并刷新列表。 */
-  const handleDelete = async (category: KnowledgeCategoryDto) => {
-    if (!window.confirm(`确定删除分类“${category.name}”吗？`)) return;
-
-    setSubmitting(true);
-    setError(null);
-    try {
-      await deleteCategory(category.id);
-      if (editingCategory?.id === category.id) setEditingCategory(null);
-      await loadCategories();
+      await deleteTag(tag.id);
+      await loadTags();
     } catch (deleteError) {
-      setError(
-        deleteError instanceof Error ? deleteError.message : "删除分类失败"
-      );
+      setError(deleteError instanceof Error ? deleteError.message : "删除标签失败");
     } finally {
       setSubmitting(false);
     }
@@ -125,13 +96,10 @@ export function CategoryManager({
         </div>
         <button
           type="button"
-          onClick={() => {
-            setEditingCategory(null);
-            setShowCreateForm((value) => !value);
-          }}
+          onClick={() => setShowCreateForm((value) => !value)}
           className="w-fit rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
-          {showCreateForm ? "收起表单" : "新建分类"}
+          {showCreateForm ? "收起表单" : "新建标签"}
         </button>
       </div>
 
@@ -140,11 +108,11 @@ export function CategoryManager({
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           className="h-9 w-full rounded-md border border-zinc-300 px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-blue-500 md:max-w-xs"
-          placeholder="搜索分类名称或描述"
+          placeholder="搜索标签名称"
         />
         <button
           type="button"
-          onClick={() => void loadCategories()}
+          onClick={() => void loadTags()}
           className="w-fit rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100"
         >
           刷新
@@ -159,25 +127,12 @@ export function CategoryManager({
 
       {showCreateForm && (
         <div className="mt-4">
-          <CategoryForm
-            key="create-category"
+          <TagForm
+            key="create-tag"
             submitting={submitting}
-            submitLabel="创建分类"
+            submitLabel="创建标签"
             onCancel={() => setShowCreateForm(false)}
             onSubmit={handleCreate}
-          />
-        </div>
-      )}
-
-      {editingCategory && (
-        <div className="mt-4">
-          <CategoryForm
-            key={editingCategory.id}
-            initialValue={editingCategory}
-            submitting={submitting}
-            submitLabel="保存修改"
-            onCancel={() => setEditingCategory(null)}
-            onSubmit={handleUpdate}
           />
         </div>
       )}
@@ -186,64 +141,46 @@ export function CategoryManager({
         {loading ? (
           <div className="flex items-center justify-center py-12 text-sm text-zinc-500">
             <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" />
-            加载分类中...
+            加载标签中...
           </div>
-        ) : categories.length === 0 ? (
+        ) : tags.length === 0 ? (
           <div className="py-12 text-center text-sm text-zinc-400">
-            {trimmedKeyword ? "没有匹配的分类" : "暂无分类"}
+            {trimmedKeyword ? "没有匹配的标签" : "暂无标签"}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase text-zinc-500">
-                <th className="px-4 py-3">分类</th>
-                <th className="px-4 py-3">描述</th>
+                <th className="px-4 py-3">标签</th>
                 <th className="px-4 py-3">排序</th>
                 <th className="px-4 py-3">更新时间</th>
                 <th className="px-4 py-3 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {categories.map((category) => (
-                <tr key={category.id} className="hover:bg-zinc-50">
+              {tags.map((tag) => (
+                <tr key={tag.id} className="hover:bg-zinc-50">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span
                         className="h-3 w-3 rounded-full border border-zinc-200"
-                        style={{
-                          backgroundColor: category.color ?? "#d4d4d8",
-                        }}
+                        style={{ backgroundColor: tag.color ?? "#d4d4d8" }}
                       />
                       <span className="font-medium text-zinc-900">
-                        {category.name}
+                        {tag.name}
                       </span>
                     </div>
                   </td>
-                  <td className="max-w-xs truncate px-4 py-3 text-zinc-500">
-                    {category.description || "-"}
-                  </td>
+                  <td className="px-4 py-3 text-zinc-500">{tag.sortOrder}</td>
                   <td className="px-4 py-3 text-zinc-500">
-                    {category.sortOrder}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-500">
-                    {formatDate(category.updatedAt)}
+                    {formatDate(tag.updatedAt)}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowCreateForm(false);
-                          setEditingCategory(category);
-                        }}
-                        className="rounded px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
-                      >
-                        编辑
-                      </button>
+                    <div className="flex justify-end">
                       <button
                         type="button"
                         disabled={submitting}
-                        onClick={() => void handleDelete(category)}
+                        onClick={() => void handleDelete(tag)}
                         className="rounded px-2 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         删除

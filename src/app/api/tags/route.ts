@@ -1,24 +1,24 @@
 /**
- * 分类集合 API，负责分类列表查询和分类创建的 HTTP 入参/响应封装。
+ * 标签集合 API，负责标签列表查询和标签创建的 HTTP 入参/响应封装。
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-  categoryCreateSchema,
-  categoryListQuerySchema,
-} from "@/features/knowledge/category.validation";
+  tagCreateSchema,
+  tagListQuerySchema,
+} from "@/features/knowledge/tag.validation";
 import {
-  createCategory,
-  isCategoryServiceError,
-  listCategories,
-} from "@/server/services/knowledge/category.service";
+  createTag,
+  isTagServiceError,
+  listTags,
+} from "@/server/services/knowledge/tag.service";
 
-/** 获取知识分类列表。 */
+/** 获取知识标签列表。 */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const parsed = categoryListQuerySchema.safeParse({
+    const parsed = tagListQuerySchema.safeParse({
       keyword: searchParams.get("keyword") ?? undefined,
     });
 
@@ -26,33 +26,33 @@ export async function GET(request: NextRequest) {
       return validationError(parsed.error.issues[0].message);
     }
 
-    const categories = await listCategories(parsed.data);
-    return NextResponse.json({ success: true, data: categories });
+    const tags = await listTags(parsed.data);
+    return NextResponse.json({ success: true, data: tags });
   } catch (error) {
-    return handleCategoryError(error, "获取分类列表失败");
+    return handleTagError(error, "获取标签列表失败");
   }
 }
 
-/** 创建知识分类。 */
+/** 创建知识标签。 */
 export async function POST(request: NextRequest) {
   try {
     const body: unknown = await request.json();
-    const parsed = categoryCreateSchema.safeParse(body);
+    const parsed = tagCreateSchema.safeParse(body);
 
     if (!parsed.success) {
       return validationError(parsed.error.issues[0].message);
     }
 
-    const category = await createCategory(parsed.data);
-    return NextResponse.json({ success: true, data: category }, { status: 201 });
+    const tag = await createTag(parsed.data);
+    return NextResponse.json({ success: true, data: tag }, { status: 201 });
   } catch (error) {
-    return handleCategoryError(error, "创建分类失败");
+    return handleTagError(error, "创建标签失败");
   }
 }
 
-/** 将分类模块错误转换为统一 API 响应。 */
-function handleCategoryError(error: unknown, fallbackMessage: string) {
-  if (isCategoryServiceError(error)) {
+/** 将标签模块错误转换为统一 API 响应。 */
+function handleTagError(error: unknown, fallbackMessage: string) {
+  if (isTagServiceError(error)) {
     return NextResponse.json(
       {
         success: false,

@@ -1,3 +1,7 @@
+/**
+ * 单个分类 API，负责分类更新和删除的 HTTP 入参/响应封装。
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -8,7 +12,7 @@ import {
   deleteCategory,
   isCategoryServiceError,
   updateCategory,
-} from "@/server/services/knowledge-category.service";
+} from "@/server/services/knowledge/category.service";
 
 /** 更新指定知识分类。 */
 export async function PATCH(

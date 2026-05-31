@@ -1,51 +1,47 @@
 "use client";
 
 /**
- * 分类表单组件，负责收集分类名称、描述、颜色和排序字段。
+ * 标签表单组件，负责收集标签名称、颜色和排序字段。
  */
 
 import { useState } from "react";
 import type { SyntheticEvent } from "react";
 
 import type {
-  KnowledgeCategoryDto,
-  KnowledgeCategoryFormValues,
+  KnowledgeTagDto,
+  KnowledgeTagFormValues,
 } from "@/features/knowledge/types";
 
-const DEFAULT_COLOR = "#2563eb";
+const DEFAULT_COLOR = "#16a34a";
 
-/** 分类表单组件参数。 */
-type CategoryFormProps = {
-  initialValue?: KnowledgeCategoryDto | null;
+/** 标签表单组件参数。 */
+type TagFormProps = {
+  initialValue?: KnowledgeTagDto | null;
   submitting?: boolean;
   submitLabel?: string;
   onCancel?: () => void;
-  onSubmit: (values: KnowledgeCategoryFormValues) => Promise<void> | void;
+  onSubmit: (values: KnowledgeTagFormValues) => Promise<void> | void;
 };
 
-/** 渲染分类创建和编辑表单。 */
-export function CategoryForm({
+/** 渲染标签创建表单。 */
+export function TagForm({
   initialValue = null,
   submitting = false,
   submitLabel,
   onCancel,
   onSubmit,
-}: CategoryFormProps) {
+}: TagFormProps) {
   const [name, setName] = useState(initialValue?.name ?? "");
-  const [description, setDescription] = useState(
-    initialValue?.description ?? ""
-  );
   const [color, setColor] = useState(initialValue?.color ?? DEFAULT_COLOR);
   const [sortOrder, setSortOrder] = useState(
     String(initialValue?.sortOrder ?? 0)
   );
 
-  /** 拦截表单默认提交并把本地状态转换为分类表单值。 */
+  /** 拦截表单默认提交并把本地状态转换为标签表单值。 */
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     await onSubmit({
       name,
-      description,
       color,
       sortOrder: Number(sortOrder || 0),
     });
@@ -60,7 +56,7 @@ export function CategoryForm({
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_140px_120px]">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-zinc-600">
-            分类名称
+            标签名称
           </span>
           <input
             value={name}
@@ -69,7 +65,7 @@ export function CategoryForm({
             disabled={submitting}
             onChange={(event) => setName(event.target.value)}
             className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none transition-colors focus:border-blue-500 disabled:bg-zinc-100"
-            placeholder="例如：权限说明"
+            placeholder="例如：权限"
           />
         </label>
 
@@ -109,20 +105,6 @@ export function CategoryForm({
         </label>
       </div>
 
-      <label className="mt-4 block">
-        <span className="mb-1 block text-xs font-medium text-zinc-600">
-          分类描述
-        </span>
-        <textarea
-          value={description}
-          maxLength={200}
-          disabled={submitting}
-          onChange={(event) => setDescription(event.target.value)}
-          className="min-h-20 w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition-colors focus:border-blue-500 disabled:bg-zinc-100"
-          placeholder="可选，用于说明这个分类适合放哪些知识"
-        />
-      </label>
-
       <div className="mt-4 flex justify-end gap-2">
         {onCancel && (
           <button
@@ -139,7 +121,7 @@ export function CategoryForm({
           disabled={submitting}
           className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting ? "保存中..." : submitLabel ?? "保存分类"}
+          {submitting ? "保存中..." : submitLabel ?? "保存标签"}
         </button>
       </div>
     </form>

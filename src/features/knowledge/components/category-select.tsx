@@ -1,7 +1,12 @@
 "use client";
 
+/**
+ * 分类选择组件，提供知识列表筛选场景可复用的单选下拉框。
+ */
+
 import type { KnowledgeCategoryDto } from "@/features/knowledge/types";
 
+/** 分类下拉选择组件参数。 */
 type CategorySelectProps = {
   categories: KnowledgeCategoryDto[];
   value?: string;

@@ -1,3 +1,7 @@
+/**
+ * 分类服务层，封装 KnowledgeCategory 的数据库访问和业务错误转换。
+ */
+
 import { prisma } from "@/lib/db";
 import type {
   CategoryCreateInput,
@@ -7,8 +11,12 @@ import type {
 import type { KnowledgeCategoryDto } from "@/features/knowledge/types";
 import type { Prisma } from "@/generated/prisma/client";
 
-export type CategoryServiceErrorCode = "CATEGORY_NOT_FOUND" | "CATEGORY_DUPLICATE_NAME";
+/** 分类服务层可抛出的业务错误码。 */
+export type CategoryServiceErrorCode =
+  | "CATEGORY_NOT_FOUND"
+  | "CATEGORY_DUPLICATE_NAME";
 
+/** 表示分类服务层业务异常，供 API Route 转换 HTTP 状态码。 */
 export class CategoryServiceError extends Error {
   constructor(
     public readonly code: CategoryServiceErrorCode,

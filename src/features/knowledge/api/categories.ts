@@ -1,13 +1,19 @@
+/**
+ * 分类前端请求封装，向组件提供稳定的分类 CRUD 调用方法。
+ */
+
 import type {
   KnowledgeCategoryDto,
   KnowledgeCategoryFormValues,
 } from "@/features/knowledge/types";
 
+/** API 成功响应的通用结构。 */
 type ApiSuccess<T> = {
   success: true;
   data: T;
 };
 
+/** API 失败响应的通用结构。 */
 type ApiFailure = {
   success: false;
   error?: {
@@ -16,8 +22,10 @@ type ApiFailure = {
   };
 };
 
+/** API 响应的联合类型，用于请求封装做成功/失败收窄。 */
 type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
+/** 分类列表查询参数。 */
 export type CategoryListParams = {
   keyword?: string;
 };
