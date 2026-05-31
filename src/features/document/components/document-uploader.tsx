@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-const ALLOWED_EXTENSIONS = ".txt,.md,.csv,.xlsx,.docx,.pdf";
-const ALLOWED_LIST = ["txt", "md", "csv", "xlsx", "docx", "pdf"];
-const MAX_SIZE_MB = 10;
+const ALLOWED_EXTENSIONS = ".txt,.md,.csv,.xlsx,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp";
+const ALLOWED_LIST = ["txt", "md", "csv", "xlsx", "docx", "pdf", "png", "jpg", "jpeg", "webp", "bmp"];
+const MAX_SIZE_MB = 100;
 
 export function DocumentUploader({
   onUploaded,
@@ -16,6 +16,12 @@ export function DocumentUploader({
   const [done, setDone] = useState(0);
   const [failed, setFailed] = useState<string[]>([]);
   const [dragover, setDragover] = useState(false);
+
+  const timerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => clearTimeout(timerRef.current);
+  }, []);
 
   const uploading = total > 0 && done + failed.length < total;
 
@@ -62,8 +68,7 @@ export function DocumentUploader({
 
       onUploaded();
 
-      // Reset after 3 seconds
-      setTimeout(() => {
+      timerRef.current = window.setTimeout(() => {
         setTotal(0);
         setDone(0);
         setFailed([]);
@@ -171,7 +176,7 @@ export function DocumentUploader({
               &nbsp;或拖拽文件到此区域
             </p>
             <p className="text-xs text-zinc-400">
-              支持 .txt .md .csv .xlsx .docx .pdf，最大 {MAX_SIZE_MB}MB，可多选
+              支持 .txt .md .csv .xlsx .docx .pdf .png .jpg .jpeg .webp .bmp，最大 {MAX_SIZE_MB}MB，可多选
             </p>
           </>
         )}

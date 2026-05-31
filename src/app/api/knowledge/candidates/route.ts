@@ -1,9 +1,17 @@
-import { NextResponse } from "next/server";
-import { listCandidates } from "@/server/services/extraction.service";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  listCandidates,
+  listCandidatesByDocument,
+} from "@/server/services/extraction.service";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const candidates = await listCandidates();
+    const { searchParams } = new URL(request.url);
+    const documentSourceId = searchParams.get("documentSourceId");
+
+    const candidates = documentSourceId
+      ? await listCandidatesByDocument(documentSourceId)
+      : await listCandidates();
 
     return NextResponse.json({
       success: true,

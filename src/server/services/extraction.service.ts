@@ -213,6 +213,59 @@ export async function deleteCandidateById(id: string) {
   return existing;
 }
 
+export async function listCandidatesByDocument(
+  documentSourceId: string
+) {
+  const items = await prisma.candidateKnowledge.findMany({
+    where: { documentSourceId },
+    orderBy: { createdAt: "desc" },
+  });
+  return items.map((c) => ({
+    id: c.id,
+    title: c.title,
+    content: c.content,
+    suggestedCategory: c.suggestedCategory,
+    suggestedTags: JSON.parse(c.suggestedTags || "[]"),
+    type: c.type,
+    status: c.status,
+    documentSourceId: c.documentSourceId,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  }));
+}
+
+export async function updateCandidate(
+  id: string,
+  data: {
+    title?: string;
+    content?: string;
+    suggestedCategory?: string | null;
+    suggestedTags?: string[];
+    type?: string;
+  }
+) {
+  const existing = await prisma.candidateKnowledge.findUnique({
+    where: { id },
+  });
+  if (!existing) return null;
+
+  return prisma.candidateKnowledge.update({
+    where: { id },
+    data: {
+      ...(data.title !== undefined && { title: data.title }),
+      ...(data.content !== undefined && { content: data.content }),
+      ...(data.suggestedCategory !== undefined && {
+        suggestedCategory: data.suggestedCategory,
+      }),
+      ...(data.suggestedTags !== undefined && {
+        suggestedTags: JSON.stringify(data.suggestedTags),
+      }),
+      ...(data.type !== undefined && { type: data.type }),
+      updatedAt: new Date(),
+    },
+  });
+}
+
 // ===== 确认入库 =====
 
 export async function confirmCandidates(ids: string[]) {
