@@ -61,3 +61,18 @@ export function renderChunkUserPrompt(
   const contextualizedText = `[文档: ${docName}] [第 ${chunkIndex + 1}/${totalChunks} 段]\n\n${chunkContent}`;
   return renderUserPrompt(contextualizedText);
 }
+
+// ── 多模态图片理解 ──────────────────────────────────────
+
+export const IMAGE_DESCRIPTION_PROMPT = `请详细描述这张图片的内容。根据图片类型，从以下角度进行分析：
+
+1. 如果是文档/截图：提取所有可见的文字内容
+2. 如果是图表/数据图：描述图表类型、数据趋势、关键数值
+3. 如果是示意图/架构图：描述结构关系、组件和连接方式
+4. 如果是照片：描述场景、对象、人物、动作和环境
+5. 如果是 UI 界面：描述布局、功能区域和交互元素
+
+要求：
+- 输出纯文本描述，不要使用 markdown 格式
+- 描述要完整详细，便于后续知识提取
+- 如果有文字内容，尽可能完整地提取出来`;
