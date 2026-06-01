@@ -9,7 +9,7 @@
 - 知识生产支持手动录入、文件上传、飞书导入和 AI 自动提炼。
 - 知识管理支持知识库管理、知识条目 CRUD、审核、状态管理和权限控制。
 - 知识消费支持基于知识库的 AI 对话、专家 Agent 和后续 Skill / SDK 扩展。
-- 当前项目技术栈为 Next.js、React、TypeScript、Tailwind CSS、shadcn/ui、Zustand、Zod、SQLite 和 Prisma。
+- 当前项目技术栈为 Next.js、React、TypeScript、Tailwind CSS、shadcn/ui、Zustand、Zod、SQLite 和 Prisma，图标库使用 lucide
 - 如果实际代码与本文档不同，应优先遵循仓库现有代码结构和 `package.json` 中的脚本。
 
 ## 技术栈约定

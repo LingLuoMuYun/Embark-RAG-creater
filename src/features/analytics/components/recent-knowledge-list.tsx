@@ -1,6 +1,6 @@
 type RecentKnowledgeItem = {
   id: string;
-  knowledgeBaseId: string;
+  knowledgeBaseId: string | null;
   title: string;
   sourceType: string;
   status: string;

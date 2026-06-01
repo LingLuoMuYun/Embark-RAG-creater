@@ -64,28 +64,32 @@ async function listDatabaseKnowledgeChunks(
     ],
   });
 
-  return chunks.map((chunk) => ({
-    id: chunk.id,
-    knowledgeBaseId: chunk.knowledgeBaseId,
-    knowledgeId: chunk.documentId,
-    title: chunk.document.title,
-    content: chunk.content,
-    status: chunk.status === "active" ? "available" : "disabled",
-    sourceType: normalizeSourceType(chunk.document.sourceType),
-    chunkType: "text",
-    chunkIndex: chunk.chunkIndex,
-    metadata: {
-      fileName: chunk.document.fileName,
-      fileUrl: chunk.document.fileUrl,
-      mimeType: chunk.document.mimeType,
-      fileSize: chunk.document.fileSize,
-      startIndex: chunk.startIndex,
-      endIndex: chunk.endIndex,
-      parseStatus: chunk.document.parseStatus,
-    },
-    createdAt: chunk.createdAt.toISOString(),
-    updatedAt: chunk.updatedAt.toISOString(),
-  }));
+  return chunks.flatMap((chunk) => {
+    if (!chunk.knowledgeBaseId) return [];
+
+    return {
+      id: chunk.id,
+      knowledgeBaseId: chunk.knowledgeBaseId,
+      knowledgeId: chunk.documentId,
+      title: chunk.document.title,
+      content: chunk.content,
+      status: chunk.status === "active" ? "available" : "disabled",
+      sourceType: normalizeSourceType(chunk.document.sourceType),
+      chunkType: "text",
+      chunkIndex: chunk.chunkIndex,
+      metadata: {
+        fileName: chunk.document.fileName,
+        fileUrl: chunk.document.fileUrl,
+        mimeType: chunk.document.mimeType,
+        fileSize: chunk.document.fileSize,
+        startIndex: chunk.startIndex,
+        endIndex: chunk.endIndex,
+        parseStatus: chunk.document.parseStatus,
+      },
+      createdAt: chunk.createdAt.toISOString(),
+      updatedAt: chunk.updatedAt.toISOString(),
+    };
+  });
 }
 
 /** 将入库侧 sourceType 适配成 RAG 对接文档约定的来源类型。 */
