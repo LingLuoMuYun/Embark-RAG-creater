@@ -6,7 +6,6 @@ import {
   saveDocumentFile,
   updateDocumentStatus,
   getFileTypeFromName,
-  recoverStuckDocuments,
 } from "@/server/services/document.service";
 import { documentListQuerySchema, uploadFileSchema } from "@/features/document/document.validation";
 
@@ -26,9 +25,6 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    // Recover any documents stuck in "parsing" before listing
-    await recoverStuckDocuments();
 
     const result = await listDocuments(parsed.data);
     return NextResponse.json({ success: true, data: result });

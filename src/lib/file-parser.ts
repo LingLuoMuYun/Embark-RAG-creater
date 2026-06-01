@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import mammoth from "mammoth";
 import jschardet from "jschardet";
 import iconv from "iconv-lite";
@@ -10,29 +8,6 @@ export type AllowedFileType = (typeof ALLOWED_TYPES)[number];
 export const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 const ENCODING_FALLBACKS = ["GBK", "GB2312", "BIG5", "SHIFT_JIS"];
-
-/**
- * Wrap a promise with a timeout. Rejects with a descriptive error if the
- * promise does not settle within `timeoutMs` milliseconds.
- */
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  label: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
-      timeoutMs,
-    );
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 function decodeTextBuffer(buffer: Buffer): string {
   // Detect encoding
@@ -321,29 +296,26 @@ export async function parseFileContent(
     case "jpeg":
     case "webp":
     case "bmp": {
-      const { createWorker } = await withTimeout(
-        import("tesseract.js"),
-        30000,
-        "tesseract.js import",
-      );
-      // Use local traineddata files in the project root instead of
-      // downloading from the network (which may hang on failure).
-      const worker = await withTimeout(
-        createWorker("chi_sim+eng", {
-          langPath: path.join(process.cwd()),
-        } as any),
-        60000,
-        "createWorker",
-      );
+      const mime = fileType === "jpg" ? "image/jpeg" : `image/${fileType}`;
       try {
-        const { data } = await withTimeout(
-          worker.recognize(buffer),
-          120000,
-          "OCR recognize",
+        const { chatWithVision } = await import("@/lib/ai-extract");
+        const { IMAGE_DESCRIPTION_PROMPT } = await import(
+          "@/lib/prompts/extraction"
         );
-        return data.text;
-      } finally {
-        await worker.terminate();
+        return await chatWithVision(buffer, mime, IMAGE_DESCRIPTION_PROMPT);
+      } catch {
+        // 多模态失败，兜底 OCR
+        const { createWorker } = await import("tesseract.js");
+        const worker = await createWorker("chi_sim+eng");
+        try {
+          const base64 = buffer.toString("base64");
+          const dataUrl = `data:${mime};base64,${base64}`;
+          const { data } = await worker.recognize(dataUrl);
+          const text = data.text.trim();
+          return text || "[图片无法识别]";
+        } finally {
+          await worker.terminate();
+        }
       }
     }
 

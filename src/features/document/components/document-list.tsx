@@ -179,7 +179,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
     } catch { /* ignore */ } finally { setBatchDeleting(false); }
   };
 
-  async function handleExtract(id: string, name: string) {
+  async function handleExtract(id: string) {
     setExtractingId(id);
     setExtractMsg(null);
     try {
@@ -356,7 +356,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                               预览
                             </button>
                             <button
-                              onClick={() => handleExtract(doc.id, doc.originalName)}
+                              onClick={() => handleExtract(doc.id)}
                               disabled={extractingId === doc.id}
                               className="rounded px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 disabled:opacity-50"
                             >

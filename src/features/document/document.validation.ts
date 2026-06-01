@@ -5,7 +5,7 @@ const ALLOWED_TYPES = ["txt", "md", "csv", "xlsx", "docx", "pdf", "png", "jpg", 
 export const documentListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
-  status: z.enum(["uploading", "uploaded", "parsing", "parsed", "embedding", "failed"]).optional(),
+  status: z.enum(["uploading", "uploaded", "parsing", "parsed", "failed"]).optional(),
   hasCandidates: z.coerce.boolean().optional(),
 });
 

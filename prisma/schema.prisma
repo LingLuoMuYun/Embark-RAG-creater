@@ -6,32 +6,30 @@ generator client {
 datasource db {
   provider = "sqlite"
 }
-
 model KnowledgeBase {
   id          String  @id @default(cuid())
   name        String  @unique
   description String?
-  icon        String? @default("")
-  chunkSize           Int   @default(800)
-  chunkOverlap        Int   @default(100)
+
+  icon  String @default("Database")
+  color String @default("blue")
+
   similarityThreshold Float @default(0.7)
   topK                Int   @default(5)
+
   status String @default("active")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  documents KnowledgeDocument[]
-  chunks    KnowledgeChunk[]
+  documents KnowledgeBaseDocument[]
 
   @@index([status])
 }
-
 model KnowledgeDocument {
-  id              String @id @default(cuid())
-  knowledgeBaseId String
+  id    String @id @default(cuid())
+  title String
 
-  title      String
   sourceType String @default("manual")
 
   fileName String?
@@ -40,28 +38,53 @@ model KnowledgeDocument {
   fileSize Int?
 
   rawContent String?
+
+  chunkSize    Int @default(800)
+  chunkOverlap Int @default(100)
+
   parseStatus String @default("pending")
-  status String @default("active")
-  error String?
+  status      String @default("active")
+  error       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase   @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  chunks        KnowledgeChunk[]
+  knowledgeBases KnowledgeBaseDocument[]
+  chunks         KnowledgeChunk[]
 
-  @@index([knowledgeBaseId])
+  @@index([sourceType])
   @@index([parseStatus])
   @@index([status])
 }
 
-model KnowledgeChunk {
+model KnowledgeBaseDocument {
   id              String @id @default(cuid())
   knowledgeBaseId String
   documentId      String
 
-  content   String
+  status    String @default("active")
+  sortOrder Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([knowledgeBaseId, documentId])
+  @@index([knowledgeBaseId])
+  @@index([documentId])
+  @@index([status])
+}
+
+
+model KnowledgeChunk {
+  id         String @id @default(cuid())
+  documentId String
+
+  content    String
   chunkIndex Int
+
   embedding String?
 
   status String @default("active")
@@ -72,29 +95,25 @@ model KnowledgeChunk {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  @@index([knowledgeBaseId])
   @@index([documentId])
   @@index([status])
-  @@index([knowledgeBaseId, status])
+  @@index([documentId, status])
 }
 
 model DocumentSource {
-  id            String          @id @default(cuid())
-  originalName  String
-  fileType      String
-  fileSize      Int
-  status        String          @default("uploading")
-  content       String?
-  errorMessage  String?
-  chunkCount    Int             @default(0)
-  embeddedCount Int             @default(0)
-  embedStatus   String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  chunks        DocumentChunk[]
+  id           String          @id @default(cuid())
+  originalName String
+  fileType     String
+  fileSize     Int
+  status       String          @default("uploading")
+  content      String?
+  errorMessage String?
+  chunkCount   Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  chunks       DocumentChunk[]
 
   @@index([status])
 }
@@ -106,7 +125,6 @@ model DocumentChunk {
   content          String
   charStart        Int
   charEnd          Int
-  embedding        String?
   createdAt        DateTime       @default(now())
   documentSource   DocumentSource @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
 
@@ -116,13 +134,13 @@ model DocumentChunk {
 
 model CandidateKnowledge {
   id                String   @id @default(cuid())
-  documentSourceId  String?  // 来源文档 ID（关联 DocumentSource，可选）
-  title             String   // AI 提炼的知识标题
-  content           String   // AI 提炼的知识正文
-  suggestedCategory String?  // AI 建议的分类名称（纯文本）
-  suggestedTags     String?  // AI 建议的标签列表（JSON 数组字符串）
-  type              String   @default("concept") // faq | concept | procedure | note | summary
-  status            String   @default("pending") // pending | confirmed | rejected
+  documentSourceId  String?
+  title             String
+  content           String
+  suggestedCategory String?
+  suggestedTags     String?
+  type              String   @default("concept")
+  status            String   @default("pending")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
