@@ -183,6 +183,23 @@ export async function createKnowledgeBaseService(
         },
       });
 
+      if (documentIds.length > 0) {
+        await tx.knowledgeDocument.updateMany({
+          where: {
+            id: { in: documentIds },
+            knowledgeBaseId: null,
+          },
+          data: { knowledgeBaseId: item.id },
+        });
+        await tx.knowledgeChunk.updateMany({
+          where: {
+            documentId: { in: documentIds },
+            knowledgeBaseId: null,
+          },
+          data: { knowledgeBaseId: item.id },
+        });
+      }
+
       return mapKnowledgeBaseTree(item);
     });
   } catch (error) {
@@ -305,6 +322,20 @@ export async function bindDocumentsToKnowledgeBaseService(
           documentId,
           sortOrder: baseSortOrder + index,
         })),
+      });
+      await tx.knowledgeDocument.updateMany({
+        where: {
+          id: { in: nextDocumentIds },
+          knowledgeBaseId: null,
+        },
+        data: { knowledgeBaseId },
+      });
+      await tx.knowledgeChunk.updateMany({
+        where: {
+          documentId: { in: nextDocumentIds },
+          knowledgeBaseId: null,
+        },
+        data: { knowledgeBaseId },
       });
     }
   });
