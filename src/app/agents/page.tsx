@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 
+import { AdminShell } from "@/components/layout/admin-shell";
 import { AgentList } from "@/features/agent/components/agent-list";
 
 export default function AgentsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-6 py-8 text-zinc-950">
+    <AdminShell>
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -46,6 +47,6 @@ export default function AgentsPage() {
           onRefresh={() => setRefreshKey((key) => key + 1)}
         />
       </div>
-    </main>
+    </AdminShell>
   );
 }
