@@ -122,3 +122,33 @@ type KnowledgeChunk = {
 @@index([status])
 @@index([documentId, status])
 ```
+
+## ExpertAgent 专家 Agent 表
+
+成员 E 负责的专家 Agent 配置表，用于保存一个可被问答模块消费的 Agent。  
+该表只保存 Agent 的角色配置、知识范围、回答策略和 system prompt，不负责保存真实对话消息或检索结果。
+
+```ts
+type ExpertAgent = {
+  id: string; // 主键，cuid 自动生成
+  name: string; // Agent 名称
+  description?: string | null; // Agent 描述
+  answerStyle: "strict" | "concise" | "teaching" | "support" | string; // 回答风格，默认 strict
+  knowledgeScope: string; // JSON 字符串，保存 Agent 允许检索的知识范围
+  showReferences: boolean; // 是否展示引用来源，默认 true
+  allowKnowledgeCapture: boolean; // 是否允许从对话中沉淀新知识，默认 false
+  status: "draft" | "active" | "disabled" | string; // Agent 状态，默认 draft
+  systemPrompt?: string | null; // 根据 Agent 配置生成的 system prompt
+  createdAt: Date; // 创建时间
+  updatedAt: Date; // 更新时间，自动更新
+  conversations?: AgentConversation[]; // 关联的对话记录，由成员 F 的问答模块使用
+};
+```
+
+索引：
+
+```prisma
+@@index([status])
+@@index([answerStyle])
+@@index([createdAt])
+```
