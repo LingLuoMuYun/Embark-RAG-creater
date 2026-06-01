@@ -8,7 +8,9 @@ export type AppSlice = {
   toggleSidebar: () => void;
 };
 
-export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (set) => ({
+export const createAppSlice: StateCreator<StoreState, [], [], AppSlice> = (
+  set
+) => ({
   sidebarOpen: true,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),

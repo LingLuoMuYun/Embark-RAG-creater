@@ -11,27 +11,36 @@ model KnowledgeBase {
   id          String  @id @default(cuid())
   name        String  @unique
   description String?
-  icon        String? @default("")
-  chunkSize           Int   @default(800)
-  chunkOverlap        Int   @default(100)
+
+  icon  String @default("Database")
+  color String @default("blue")
+
+  // Compatibility fields used by main branch UI/API. New RAG management stores
+  // chunk settings on KnowledgeDocument.
+  chunkSize    Int @default(800)
+  chunkOverlap Int @default(100)
+
   similarityThreshold Float @default(0.7)
   topK                Int   @default(5)
+
   status String @default("active")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  documents KnowledgeDocument[]
-  chunks    KnowledgeChunk[]
+  documents KnowledgeBaseDocument[]
 
   @@index([status])
 }
 
 model KnowledgeDocument {
-  id              String @id @default(cuid())
-  knowledgeBaseId String
+  id    String @id @default(cuid())
+  title String
 
-  title      String
+  // Compatibility scalar for main branch code that still filters documents by
+  // a single knowledge base. The canonical relation is KnowledgeBaseDocument.
+  knowledgeBaseId String?
+
   sourceType String @default("manual")
 
   fileName String?
@@ -40,28 +49,57 @@ model KnowledgeDocument {
   fileSize Int?
 
   rawContent String?
+
+  chunkSize    Int @default(800)
+  chunkOverlap Int @default(100)
+
   parseStatus String @default("pending")
-  status String @default("active")
-  error String?
+  status      String @default("active")
+  error       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase   @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  chunks        KnowledgeChunk[]
+  knowledgeBases KnowledgeBaseDocument[]
+  chunks         KnowledgeChunk[]
 
   @@index([knowledgeBaseId])
+  @@index([sourceType])
   @@index([parseStatus])
   @@index([status])
 }
 
-model KnowledgeChunk {
+model KnowledgeBaseDocument {
   id              String @id @default(cuid())
   knowledgeBaseId String
   documentId      String
 
-  content   String
+  status    String @default("active")
+  sortOrder Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([knowledgeBaseId, documentId])
+  @@index([knowledgeBaseId])
+  @@index([documentId])
+  @@index([status])
+}
+
+model KnowledgeChunk {
+  id         String @id @default(cuid())
+  documentId String
+
+  // Compatibility scalar for main branch RAG/Agent code. New RAG management
+  // resolves knowledge base scope through KnowledgeBaseDocument.
+  knowledgeBaseId String?
+
+  content    String
   chunkIndex Int
+
   embedding String?
 
   status String @default("active")
@@ -72,13 +110,13 @@ model KnowledgeChunk {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([knowledgeBaseId])
   @@index([documentId])
   @@index([status])
   @@index([knowledgeBaseId, status])
+  @@index([documentId, status])
 }
 
 model ChunkEmbedding {
@@ -95,7 +133,6 @@ model ChunkEmbedding {
   @@index([updatedAt])
 }
 
-/// 知识分类主数据，初版全局共享且暂不绑定具体知识条目。
 model KnowledgeCategory {
   id          String  @id @default(cuid())
   name        String  @unique
@@ -110,7 +147,6 @@ model KnowledgeCategory {
   @@index([createdAt])
 }
 
-/// 知识标签主数据，初版全局共享且暂不绑定具体知识条目。
 model KnowledgeTag {
   id        String  @id @default(cuid())
   name      String  @unique
@@ -124,30 +160,33 @@ model KnowledgeTag {
   @@index([createdAt])
 }
 model DocumentSource {
-  id           String          @id @default(cuid())
+  id           String   @id @default(cuid())
   originalName String
   fileType     String
   fileSize     Int
-  status       String          @default("uploading")
+  status       String   @default("uploading")
   content      String?
   errorMessage String?
-  chunkCount   Int             @default(0)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  chunks       DocumentChunk[]
+  chunkCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  chunks DocumentChunk[]
 
   @@index([status])
 }
 
 model DocumentChunk {
-  id               String         @id @default(cuid())
+  id               String   @id @default(cuid())
   documentSourceId String
   chunkIndex       Int
   content          String
   charStart        Int
   charEnd          Int
-  createdAt        DateTime       @default(now())
-  documentSource   DocumentSource @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  documentSource DocumentSource @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
 
   @@index([documentSourceId])
   @@index([documentSourceId, chunkIndex])
@@ -174,28 +213,13 @@ model ExpertAgent {
   name        String
   description String?
 
-  /// Answer style key, for example: strict, concise, teaching, support.
-  answerStyle String @default("strict")
-
-  /// JSON string for flexible scope configuration before retrieval tables settle.
-  /// Expected shape can map to RagRetrieveRequest.scope:
-  /// {
-  ///   "mode": "all" | "knowledgeBases" | "categories" | "tags" | "knowledgeItems",
-  ///   "knowledgeBaseIds": string[],
-  ///   "categoryIds": string[],
-  ///   "tagIds": string[],
-  ///   "knowledgeIds": string[],
-  ///   "chunkTypes": string[]
-  /// }
+  answerStyle    String @default("strict")
   knowledgeScope String @default("{}")
 
   showReferences        Boolean @default(true)
   allowKnowledgeCapture Boolean @default(false)
 
-  /// Agent lifecycle status. Keep as String to avoid enum churn in team integration.
-  /// Suggested values: draft, active, disabled.
-  status String @default("draft")
-
+  status       String  @default("draft")
   systemPrompt String?
 
   createdAt DateTime @default(now())
@@ -246,24 +270,22 @@ model AgentMessage {
 model UsageLog {
   id String @id @default(cuid())
 
-  /// Source of this usage event. First supported value: rag_retrieve.
   source String @default("rag_retrieve")
-
-  query String
-  mode  String @default("balanced")
-
-  /// JSON string of RagRetrieveRequest.scope from docs/知识入库字段建议以及请求检索接口对接文档.md.
-  scope String
+  query  String
+  mode   String @default("balanced")
+  scope  String
 
   hitCount Int     @default(0)
   noHit    Boolean @default(false)
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   references UsageReference[]
 
   @@index([source])
   @@index([noHit])
+  @@index([query])
   @@index([createdAt])
 }
 
@@ -271,7 +293,6 @@ model UsageReference {
   id         String @id @default(cuid())
   usageLogId String
 
-  /// Fields mirror RagReference returned by POST /api/rag/retrieve.
   knowledgeBaseId String
   knowledgeId     String
   chunkId         String
@@ -279,10 +300,12 @@ model UsageReference {
   chunkType       String
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   usageLog UsageLog @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
 
   @@index([usageLogId])
+  @@index([knowledgeBaseId])
   @@index([knowledgeId])
   @@index([chunkId])
   @@index([chunkType])

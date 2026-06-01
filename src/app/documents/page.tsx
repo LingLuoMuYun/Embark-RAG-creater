@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+
+import { AdminShell } from "@/components/layout/admin-shell";
 import { DocumentUploader } from "@/features/document/components/document-uploader";
 import { DocumentList } from "@/features/document/components/document-list";
 import { DocumentPreview } from "@/features/document/components/document-preview";
@@ -12,6 +14,7 @@ export default function DocumentsPage() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [parseLoading, setParseLoading] = useState(false);
   const [parseCount, setParseCount] = useState(0);
+
   const handleUploaded = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
@@ -36,17 +39,16 @@ export default function DocumentsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
-        {/* 页头 */}
+    <AdminShell>
+      <div className="mx-auto max-w-5xl space-y-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">文档管理</h1>
-          <p className="text-gray-500 mt-1">
-            上传并管理文档，AI 自动从文档中提炼结构化知识，审核后沉淀到知识库
+          <p className="mb-1 text-sm font-medium text-zinc-500">知识生产</p>
+          <h1 className="text-2xl font-semibold text-zinc-900">文档导入管线</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            上传文档、表格和图片，自动提取文本内容，智能切分后用于 AI 知识提炼
           </p>
         </div>
 
-        {/* 上传区域 */}
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">上传文件</h2>
           <p className="text-sm text-gray-500 mb-3">
@@ -55,7 +57,6 @@ export default function DocumentsPage() {
           <DocumentUploader onUploaded={handleUploaded} />
         </div>
 
-        {/* 文档列表 */}
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900">文档列表</h2>
@@ -72,18 +73,18 @@ export default function DocumentsPage() {
             onPreview={handlePreview}
           />
         </div>
+
+        {parseLoading && (
+          <div className="fixed bottom-6 right-6 rounded-lg bg-blue-600 px-4 py-3 text-sm text-white shadow-lg">
+            {parseCount > 1 ? "正在批量解析文档..." : "正在解析文档..."}
+          </div>
+        )}
+
+        <DocumentPreview
+          documentId={previewId}
+          onClose={() => setPreviewId(null)}
+        />
       </div>
-
-      {parseLoading && (
-        <div className="fixed bottom-6 right-6 rounded-lg bg-blue-600 px-4 py-3 text-sm text-white shadow-lg">
-          {parseCount > 1 ? "正在批量解析文档..." : "正在解析文档..."}
-        </div>
-      )}
-
-      <DocumentPreview
-        documentId={previewId}
-        onClose={() => setPreviewId(null)}
-      />
-    </div>
+    </AdminShell>
   );
 }

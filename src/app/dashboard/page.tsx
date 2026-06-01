@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { AdminShell } from "@/components/layout/admin-shell";
 import { ActivityHeatmap } from "@/features/analytics/components/activity-heatmap";
 import { CategoryDistribution } from "@/features/analytics/components/category-distribution";
 import { PlaceholderPanel } from "@/features/analytics/components/placeholder-panel";
@@ -26,23 +25,15 @@ export default async function DashboardPage() {
   }));
 
   return (
-    <main className="min-h-screen bg-zinc-50 px-6 py-10 text-zinc-950">
+    <AdminShell>
       <div className="mx-auto max-w-6xl">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-1 text-sm font-medium text-zinc-500">
-              知识闭环与数据分析
-            </p>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              Dashboard 数据总览
-            </h1>
-          </div>
-          <Link
-            href="/"
-            className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-600 shadow-sm hover:bg-zinc-100"
-          >
-            返回首页
-          </Link>
+        <div className="mb-8">
+          <p className="mb-1 text-sm font-medium text-zinc-500">
+            知识闭环与数据分析
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Dashboard 数据总览
+          </h1>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -123,6 +114,6 @@ export default async function DashboardPage() {
           />
         </div>
       </div>
-    </main>
+    </AdminShell>
   );
 }
