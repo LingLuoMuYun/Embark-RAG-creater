@@ -22,6 +22,8 @@ export default function DocumentsPage() {
   const handleParse = useCallback(async (ids: string[]) => {
     setParseLoading(true);
     setParseCount(ids.length);
+    // 立即刷新列表，让"解析中"状态显示出来
+    setRefreshKey((k) => k + 1);
     try {
       await Promise.all(ids.map((id) =>
         fetch(`/api/documents/${id}/parse`, { method: "POST" })

@@ -79,9 +79,11 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
     }
   }, [someSelected]);
 
+  const hasLoadedRef = useRef(false);
+
   const fetchDocuments = useCallback(async () => {
-    setLoading(true);
     setError(null);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (filter === "extracted") {
@@ -96,6 +98,8 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       if (json.success) {
         setDocuments(json.data.items);
         setTotal(json.data.total);
+        setSelected(new Set());
+        hasLoadedRef.current = true;
       } else {
         throw new Error(json.error?.message || "加载失败");
       }
@@ -220,7 +224,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       <div className="ml-auto flex items-center gap-2">
         {parseIds.length > 0 && (
           <button
-            onClick={() => { onParse(parseIds); setSelected(new Set()); }}
+            onClick={() => { onParse(parseIds); }}
             disabled={batchDeleting}
             className="rounded px-3 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >
@@ -264,7 +268,13 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase text-zinc-500">
                 <th className="w-10 px-3 py-3">
-                  <input type="checkbox" ref={selectAllRef} onChange={toggleAll} className="h-3.5 w-3.5 rounded" />
+                  <input
+                    type="checkbox"
+                    ref={selectAllRef}
+                    checked={documents.length > 0 && selected.size === documents.length}
+                    onChange={toggleAll}
+                    className="h-3.5 w-3.5 rounded"
+                  />
                 </th>
                 <th className="px-4 py-3">文件名</th>
                 <th className="px-4 py-3">类型</th>

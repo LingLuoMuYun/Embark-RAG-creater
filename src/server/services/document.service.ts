@@ -16,6 +16,11 @@ import type { TextChunk } from "@/lib/text-splitter";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
+/** 检测文本是否包含 Markdown 表格（|...| 格式行），包含表格时跳过语义分段 */
+function containsTable(text: string): boolean {
+  return /^\|.+\|$/m.test(text);
+}
+
 async function ensureUploadDir(): Promise<void> {
   try {
     await fs.mkdir(UPLOAD_DIR, { recursive: true });
@@ -175,8 +180,9 @@ export async function parseDocument(id: string): Promise<{
       return { content, chunkCount: doc.chunkCount };
     }
 
-    // 向量化语义分段优先，失败退回机械切分
-    const semanticChunks = await splitTextSemantic(content);
+    // 含表格时直接用机械分段（表格保护），否则语义分段优先
+    const hasTable = containsTable(content);
+    const semanticChunks = hasTable ? null : await splitTextSemantic(content);
     const chunks = semanticChunks ?? splitTextIntoChunks(content);
 
     // Delete old chunks and create new ones in a transaction
@@ -221,8 +227,9 @@ export async function updateDocumentContent(id: string, content: string) {
   // 内容未变更则跳过切分
   if (doc.content === content) return doc;
 
-  // 语义分段优先，失败退回机械切分
-  const semanticChunks = await splitTextSemantic(content);
+  // 含表格时直接用机械分段（表格保护），否则语义分段优先
+  const hasTable = containsTable(content);
+  const semanticChunks = hasTable ? null : await splitTextSemantic(content);
   const chunks = semanticChunks ?? splitTextIntoChunks(content);
 
   await prisma.$transaction(async (tx) => {
