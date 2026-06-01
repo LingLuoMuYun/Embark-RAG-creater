@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AgentChunkType,
@@ -98,6 +99,8 @@ const CHUNK_TYPE_LABELS: Record<AgentChunkType, string> = {
   qa: "问答",
 };
 
+const AGENT_LIST_REQUEST_TIMEOUT_MS = 15_000;
+
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleString("zh-CN", {
     year: "numeric",
@@ -184,6 +187,7 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
   const [validationById, setValidationById] = useState<
     Record<string, ValidationState>
   >({});
+  const fetchSeqRef = useRef(0);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -204,25 +208,51 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
     [agents]
   );
 
-  const fetchAgents = useCallback(async () => {
+  const fetchAgents = useCallback(async (signal?: AbortSignal) => {
+    const fetchSeq = fetchSeqRef.current + 1;
+    fetchSeqRef.current = fetchSeq;
+    const isCurrentFetch = () => fetchSeqRef.current === fetchSeq;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(query ? `/api/agents?${query}` : "/api/agents");
+      const request = fetch(query ? `/api/agents?${query}` : "/api/agents", {
+        signal,
+      });
+      const timeout = new Promise<Response>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error("加载超时，请重试"));
+        }, AGENT_LIST_REQUEST_TIMEOUT_MS);
+      });
+      const res = await Promise.race([request, timeout]);
       const json = (await res.json()) as AgentListResponse;
       if (!json.success || !json.data) {
         throw new Error(json.error?.message || "加载失败");
       }
-      setAgents(json.data.items);
+      if (isCurrentFetch()) {
+        setAgents(json.data.items);
+      }
     } catch (err) {
+      if (signal?.aborted || !isCurrentFetch()) return;
       setError(err instanceof Error ? err.message : "加载失败");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted && isCurrentFetch()) {
+        setLoading(false);
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     }
   }, [query]);
 
   useEffect(() => {
-    fetchAgents();
+    const controller = new AbortController();
+    fetchAgents(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
   }, [fetchAgents, refreshKey]);
 
   const handleValidate = async (agentId: string) => {
@@ -321,7 +351,11 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
       ) : error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
           {error}
-          <button type="button" onClick={fetchAgents} className="ml-2 underline">
+          <button
+            type="button"
+            onClick={() => fetchAgents()}
+            className="ml-2 underline"
+          >
             重试
           </button>
         </div>
@@ -333,12 +367,12 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
           <p className="mt-1 text-xs text-zinc-500">
             先创建角色，再绑定知识范围和回答策略。
           </p>
-          <a
+          <Link
             href="/agents/new"
             className="mt-4 inline-flex rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-800"
           >
             新建 Agent
-          </a>
+          </Link>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white shadow-sm">
@@ -433,12 +467,12 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <a
+                        <Link
                           href={`/agents/${agent.id}/edit`}
                           className="rounded px-2 py-1 text-xs font-medium text-cyan-700 hover:bg-cyan-50"
                         >
                           编辑
-                        </a>
+                        </Link>
                         <button
                           type="button"
                           onClick={() => handleValidate(agent.id)}
@@ -448,12 +482,12 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
                           {validationState?.loading ? "检查中" : "检查"}
                         </button>
                         {agent.status === "active" ? (
-                          <a
+                          <Link
                             href={`/agents/chat?agentId=${agent.id}`}
                             className="rounded px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
                           >
                             对话
-                          </a>
+                          </Link>
                         ) : (
                           <button
                             type="button"
