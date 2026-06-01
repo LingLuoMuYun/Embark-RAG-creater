@@ -81,6 +81,48 @@ model KnowledgeChunk {
   @@index([knowledgeBaseId, status])
 }
 
+model ChunkEmbedding {
+  chunkId        String @id
+  embedding      String
+  embeddingModel String
+  contentHash    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([embeddingModel])
+  @@index([contentHash])
+  @@index([updatedAt])
+}
+
+/// 知识分类主数据，初版全局共享且暂不绑定具体知识条目。
+model KnowledgeCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  color       String?
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([createdAt])
+}
+
+/// 知识标签主数据，初版全局共享且暂不绑定具体知识条目。
+model KnowledgeTag {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  color     String?
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([createdAt])
+}
 model DocumentSource {
   id           String          @id @default(cuid())
   originalName String
@@ -125,4 +167,123 @@ model CandidateKnowledge {
 
   @@index([status])
   @@index([documentSourceId])
+}
+
+model ExpertAgent {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  /// Answer style key, for example: strict, concise, teaching, support.
+  answerStyle String @default("strict")
+
+  /// JSON string for flexible scope configuration before retrieval tables settle.
+  /// Expected shape can map to RagRetrieveRequest.scope:
+  /// {
+  ///   "mode": "all" | "knowledgeBases" | "categories" | "tags" | "knowledgeItems",
+  ///   "knowledgeBaseIds": string[],
+  ///   "categoryIds": string[],
+  ///   "tagIds": string[],
+  ///   "knowledgeIds": string[],
+  ///   "chunkTypes": string[]
+  /// }
+  knowledgeScope String @default("{}")
+
+  showReferences        Boolean @default(true)
+  allowKnowledgeCapture Boolean @default(false)
+
+  /// Agent lifecycle status. Keep as String to avoid enum churn in team integration.
+  /// Suggested values: draft, active, disabled.
+  status String @default("draft")
+
+  systemPrompt String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations AgentConversation[]
+
+  @@index([status])
+  @@index([answerStyle])
+  @@index([createdAt])
+}
+
+model AgentConversation {
+  id                    String  @id @default(cuid())
+  agentId               String
+  title                 String
+  memorySummary         String?
+  memoryCursorMessageId String?
+  memoryFailureCount    Int     @default(0)
+  status                String  @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent    ExpertAgent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  messages AgentMessage[]
+
+  @@index([agentId])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model AgentMessage {
+  id             String  @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  citationsJson  String?
+
+  createdAt DateTime @default(now())
+
+  conversation AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model UsageLog {
+  id String @id @default(cuid())
+
+  /// Source of this usage event. First supported value: rag_retrieve.
+  source String @default("rag_retrieve")
+
+  query String
+  mode  String @default("balanced")
+
+  /// JSON string of RagRetrieveRequest.scope from docs/知识入库字段建议以及请求检索接口对接文档.md.
+  scope String
+
+  hitCount Int     @default(0)
+  noHit    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  references UsageReference[]
+
+  @@index([source])
+  @@index([noHit])
+  @@index([createdAt])
+}
+
+model UsageReference {
+  id         String @id @default(cuid())
+  usageLogId String
+
+  /// Fields mirror RagReference returned by POST /api/rag/retrieve.
+  knowledgeBaseId String
+  knowledgeId     String
+  chunkId         String
+  title           String
+  chunkType       String
+
+  createdAt DateTime @default(now())
+
+  usageLog UsageLog @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
+
+  @@index([usageLogId])
+  @@index([knowledgeId])
+  @@index([chunkId])
+  @@index([chunkType])
 }
