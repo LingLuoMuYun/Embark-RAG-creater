@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { AdminShell } from "@/components/layout/admin-shell";
@@ -22,18 +23,18 @@ export default function AgentsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <a
+            <Link
               href="/agents/chat"
               className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:bg-zinc-50"
             >
               进入对话
-            </a>
-            <a
+            </Link>
+            <Link
               href="/agents/new"
               className="rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-cyan-800"
             >
               新建 Agent
-            </a>
+            </Link>
           </div>
         </div>
 
