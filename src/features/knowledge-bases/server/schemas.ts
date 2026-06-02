@@ -25,6 +25,7 @@ export const sourceTypeSchema = z.enum([
   "text",
   "markdown",
   "image",
+  "ai",
 ]);
 
 export const sourceTypeWithAllSchema = z.enum([
@@ -34,6 +35,7 @@ export const sourceTypeWithAllSchema = z.enum([
   "text",
   "markdown",
   "image",
+  "ai",
   "all",
 ]);
 
@@ -50,6 +52,14 @@ export const parseStatusWithAllSchema = z.enum([
   "success",
   "failed",
   "all",
+]);
+
+export const documentChunkTypeSchema = z.enum([
+  "faq",
+  "concept",
+  "procedure",
+  "note",
+  "summary",
 ]);
 
 export const idParamsSchema = z.object({
@@ -72,19 +82,21 @@ export const createKnowledgeChunkSchema = z
   .object({
     content: z.string().trim().min(1),
     chunkIndex: z.number().int().min(0),
+    charStart: z.number().int().min(0).optional(),
+    charEnd: z.number().int().min(0).optional(),
     embedding: z.string().optional(),
+    category: z.string().trim().optional(),
+    type: documentChunkTypeSchema.optional().default("note"),
     status: statusSchema.optional().default("active"),
-    startIndex: z.number().int().min(0).optional(),
-    endIndex: z.number().int().min(0).optional(),
   })
   .refine(
     (value) =>
-      value.startIndex === undefined ||
-      value.endIndex === undefined ||
-      value.endIndex >= value.startIndex,
+      value.charStart === undefined ||
+      value.charEnd === undefined ||
+      value.charEnd >= value.charStart,
     {
-      message: "endIndex must be greater than or equal to startIndex",
-      path: ["endIndex"],
+      message: "charEnd must be greater than or equal to charStart",
+      path: ["charEnd"],
     }
   );
 
@@ -93,45 +105,40 @@ export const replaceKnowledgeChunksSchema = z.object({
 });
 
 const documentBaseObjectSchema = z.object({
-  title: z.string().trim().min(1),
+  title: z.string().trim().min(1).optional(),
   sourceType: sourceTypeSchema.optional().default("manual"),
+  originalName: z.string().trim().optional(),
+  fileType: z.string().trim().optional(),
   fileName: z.string().trim().optional(),
   fileUrl: z.string().trim().optional(),
   mimeType: z.string().trim().optional(),
   fileSize: z.number().int().min(0).optional(),
+  content: z.string().optional(),
   rawContent: z.string().optional(),
-  chunkSize: z.number().int().min(100).max(5000).optional().default(800),
-  chunkOverlap: z.number().int().min(0).optional().default(100),
   parseStatus: parseStatusSchema.optional().default("pending"),
-  status: statusSchema.optional().default("active"),
-  error: z.string().optional(),
+  status: z.string().trim().optional().default("uploading"),
+  errorMessage: z.string().optional(),
 });
 
-const documentBaseSchema = documentBaseObjectSchema.refine(
-  (value) => value.chunkOverlap < value.chunkSize,
-  {
-    message: "chunkOverlap must be smaller than chunkSize",
-    path: ["chunkOverlap"],
-  }
-);
-
-export const createKnowledgeDocumentSchema = documentBaseSchema.extend({
-  chunks: z.array(createKnowledgeChunkSchema).optional(),
-  knowledgeBaseIds: z.array(z.string().min(1)).optional(),
-});
+export const createKnowledgeDocumentSchema = documentBaseObjectSchema
+  .extend({
+    chunks: z.array(createKnowledgeChunkSchema).optional(),
+    knowledgeBaseIds: z.array(z.string().min(1)).optional(),
+  })
+  .transform((value) => ({
+    ...value,
+    title:
+      value.title ??
+      value.originalName ??
+      value.fileName ??
+      "未命名文档",
+  }));
 
 export const updateKnowledgeDocumentSchema = documentBaseObjectSchema
   .partial()
-  .refine(
-    (value) =>
-      value.chunkSize === undefined ||
-      value.chunkOverlap === undefined ||
-      value.chunkOverlap < value.chunkSize,
-    {
-      message: "chunkOverlap must be smaller than chunkSize",
-      path: ["chunkOverlap"],
-    }
-  );
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "Provide at least one field to update",
+  });
 
 export const createKnowledgeBaseSchema = z.object({
   name: z.string().trim().min(1).max(50),

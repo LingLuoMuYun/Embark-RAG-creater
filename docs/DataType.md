@@ -1,154 +1,203 @@
-# 数据库数据结构
+# 数据结构说明
 
-本文档根据 `prisma/schema.prisma` 维护，用 TypeScript 类型形式说明当前数据库表结构。  
-说明：SQLite 层面的 `String` 状态字段没有枚举约束，下面的联合类型表示当前业务代码约定值。
+本文档按当前 `prisma/schema.prisma` 描述数据库模型。当前数据结构已经并拢为一套文档/分片主模型：
 
-## KnowledgeBase 知识库表
+- 文档主表：`DocumentSource`
+- 分片主表：`DocumentChunk`
+- 知识库与文档关系：`KnowledgeBaseDocument`
+- 分片向量：直接存储在 `DocumentChunk.embedding`
 
-存储知识库的基础信息、检索参数和启用状态。
+以下旧模型已经删除，不再作为数据库表使用：
 
-```ts
-type KnowledgeBase = {
-  id: string; // 主键，cuid 自动生成
-  name: string; // 知识库名称，唯一
-  description?: string | null; // 知识库描述
-  icon: string; // 知识库图标，默认 Database
-  similarityThreshold: number; // 相似度阈值，默认 0.7
-  topK: number; // 检索时返回的最大条数，默认 5
-  status: "active" | "disabled" | string; // 知识库状态，默认 active
-  createdAt: Date; // 创建时间
-  updatedAt: Date; // 更新时间，自动更新
-  documents: KnowledgeBaseDocument[]; // 关联的知识库-文档关系
-};
+- `KnowledgeDocument`
+- `KnowledgeChunk`
+- `ChunkEmbedding`
+- `CandidateKnowledge`
+
+## 关系概览
+
+```text
+KnowledgeBase 1 - n KnowledgeBaseDocument
+DocumentSource 1 - n KnowledgeBaseDocument
+DocumentSource 1 - n DocumentChunk
+ExpertAgent 1 - n AgentConversation
+AgentConversation 1 - n AgentMessage
+UsageLog 1 - n UsageReference
 ```
 
-索引：
+`KnowledgeBase.documents`、`DocumentSource.chunks`、`DocumentSource.knowledgeBases` 等是 Prisma 关系字段，不是数据库中的数组列。
 
-```prisma
-@@index([status])
-```
+## KnowledgeBase
 
-## KnowledgeDocument 知识文档表
+知识库表，存储 RAG 知识库的基本配置。
 
-存储知识来源文档、文件元信息、解析配置、解析状态和原始文本。
+| 字段                  | 说明                                                    |
+| --------------------- | ------------------------------------------------------- |
+| `id`                  | 主键。                                                  |
+| `name`                | 知识库名称，唯一。                                      |
+| `description`         | 描述。                                                  |
+| `icon`                | 图标名，默认 `Database`。                               |
+| `color`               | 颜色，默认 `blue`。                                     |
+| `similarityThreshold` | 相似度阈值，默认 `0.7`。                                |
+| `topK`                | 默认召回数量，默认 `5`。                                |
+| `status`              | 状态，默认 `active`。                                   |
+| `documents`           | Prisma 关系字段，访问关联的 `KnowledgeBaseDocument[]`。 |
 
-```ts
-type KnowledgeDocument = {
-  id: string; // 主键，cuid 自动生成
-  title: string; // 文档标题
-  sourceType:
-    | "manual"
-    | "file"
-    | "url"
-    | "text"
-    | "markdown"
-    | "image"
-    | string; // 来源类型，默认 manual
-  fileName?: string | null; // 文件名
-  fileUrl?: string | null; // 文件访问地址或导入来源地址
-  mimeType?: string | null; // 文件 MIME 类型
-  fileSize?: number | null; // 文件大小，单位为字节
-  rawContent?: string | null; // 解析后的原始文本内容
-  maxchunkSize?: number; // 文本切片大小，默认 800
-  chunkOverlap: number; // 切片重叠长度，默认 100
-  parseStatus? "pending" | "processing" | "success" | "failed" | string; // 解析状态，默认 pending
-  status: "active" | "disabled" | string; // 文档状态，默认 active
-  error?: string | null; // 解析或处理失败时的错误信息
-  createdAt: Date; // 创建时间
-  updatedAt: Date; // 更新时间，自动更新
-  knowledgeBases: KnowledgeBaseDocument[]; // 关联的知识库关系
-  chunks: KnowledgeChunk[]; // 文档下的知识分片
-};
-```
+`chunkSize` 和 `chunkOverlap` 已从知识库表删除。切片参数后续应作为上传/解析参数或文档级处理配置，不再放在知识库级别。
 
-索引：
+## KnowledgeBaseDocument
 
-```prisma
-@@index([sourceType])
-@@index([parseStatus])
-@@index([status])
-```
+知识库与文档的多对多关联表。
 
-## KnowledgeBaseDocument 知识库文档关联表
+| 字段              | 说明                                         |
+| ----------------- | -------------------------------------------- |
+| `id`              | 主键。                                       |
+| `knowledgeBaseId` | 外键，指向 `KnowledgeBase.id`。              |
+| `documentId`      | 外键，指向 `DocumentSource.id`。             |
+| `status`          | 关联状态，默认 `active`。                    |
+| `sortOrder`       | 排序值。                                     |
+| `knowledgeBase`   | Prisma 关系对象。                            |
+| `document`        | Prisma 关系对象，当前指向 `DocumentSource`。 |
 
-存储知识库和文档之间的多对多关系。一个知识库可以绑定多个文档，一个文档也可以被多个知识库复用。
+`knowledgeBaseId` 不能删除，它负责表达“哪个知识库绑定了哪个文档”。
 
-```ts
-type KnowledgeBaseDocument = {
-  id: string; // 主键，cuid 自动生成
-  knowledgeBaseId: string; // 知识库 ID
-  documentId: string; // 文档 ID
-  status: "active" | "disabled" | string; // 关联状态，默认 active
-  sortOrder: number; // 文档在知识库中的排序，默认 0
-  createdAt: Date; // 创建时间
-  updatedAt: Date; // 更新时间，自动更新
-  knowledgeBase: KnowledgeBase; // 关联的知识库，知识库删除时级联删除关系
-  document: KnowledgeDocument; // 关联的文档，文档删除时级联删除关系
-};
-```
+## DocumentSource
 
-约束和索引：
+统一文档主表，承担原 `KnowledgeDocument` 和上传模块 `DocumentSource` 的业务角色。
 
-```prisma
-@@unique([knowledgeBaseId, documentId])
-@@index([knowledgeBaseId])
-@@index([documentId])
-@@index([status])
-```
+| 字段             | 说明                                      |
+| ---------------- | ----------------------------------------- |
+| `id`             | 主键。迁移时尽量保留旧文档 ID。           |
+| `title`          | 文档标题。                                |
+| `sourceType`     | 来源类型，默认 `manual`。                 |
+| `originalName`   | 原始文件名。                              |
+| `fileType`       | 文件扩展或类型。                          |
+| `fileName`       | 存储文件名。                              |
+| `fileUrl`        | 文件 URL。                                |
+| `mimeType`       | MIME 类型。                               |
+| `fileSize`       | 文件大小。                                |
+| `status`         | 文档状态，默认 `uploading`。              |
+| `content`        | 解析后的正文。                            |
+| `rawContent`     | 原始正文。                                |
+| `parseStatus`    | 解析状态，默认 `pending`。                |
+| `errorMessage`   | 解析或处理错误。                          |
+| `chunkCount`     | 当前分片数量。                            |
+| `chunks`         | Prisma 关系字段，访问 `DocumentChunk[]`。 |
+| `knowledgeBases` | Prisma 关系字段，访问绑定到哪些知识库。   |
 
-## KnowledgeChunk 知识分片表
+## DocumentChunk
 
-存储文档切分后的知识片段，以及可选的向量内容和原文位置。
+统一分片表，承担原 `KnowledgeChunk` 和上传模块 `DocumentChunk` 的业务角色。
 
-```ts
-type KnowledgeChunk = {
-  id: string; // 主键，cuid 自动生成
-  documentId: string; // 所属文档 ID
-  content: string; // 分片正文
-  chunkIndex: number; // 分片在文档中的顺序
-  embedding: string | null; // 向量数据或向量序列化结果
-  status: "active" | "disabled" | string; // 分片状态，默认 active
-  startIndex?: number | null; // 分片在原文中的开始位置
-  endIndex?: number | null; // 分片在原文中的结束位置
-  createdAt: Date; // 创建时间
-  updatedAt: Date; // 更新时间，自动更新
-};
-```
+| 字段               | 说明                                      |
+| ------------------ | ----------------------------------------- | ------- | --------- | ---- | ---------- |
+| `id`               | 主键。迁移时尽量保留旧 chunk ID。         |
+| `documentSourceId` | 外键，指向 `DocumentSource.id`。          |
+| `chunkIndex`       | 文档内分片序号。                          |
+| `content`          | 分片正文。                                |
+| `charStart`        | 分片起始字符位置。                        |
+| `charEnd`          | 分片结束字符位置。                        |
+| `embedding`        | 分片向量，JSON 字符串形式存储。           |
+| `category`         | AI 总结或人工维护的文本分类，默认未定义。 |
+| `type`             | 分片类型，默认 `note`。可取 `faq          | concept | procedure | note | summary`。 |
+| `status`           | 分片状态，默认 `active`。                 |
+| `documentSource`   | Prisma 关系对象。                         |
 
-索引：
+`ChunkEmbedding` 已删除。当前默认一条 `DocumentChunk` 对应一份内联 `embedding`。解析或替换 chunk 后应生成并写入 `DocumentChunk.embedding`；内容变化时先清空 embedding，等待重新生成。
 
-```prisma
-@@index([documentId])
-@@index([status])
-@@index([documentId, status])
-```
+## KnowledgeCategory
 
-## ExpertAgent 专家 Agent 表
+全局分类主数据。
 
-成员 E 负责的专家 Agent 配置表，用于保存一个可被问答模块消费的 Agent。  
-该表只保存 Agent 的角色配置、知识范围、回答策略和 system prompt，不负责保存真实对话消息或检索结果。
+| 字段          | 说明             |
+| ------------- | ---------------- |
+| `id`          | 主键。           |
+| `name`        | 分类名称，唯一。 |
+| `description` | 描述。           |
+| `color`       | 颜色。           |
+| `sortOrder`   | 排序值。         |
 
-```ts
-type ExpertAgent = {
-  id: string; // 主键，cuid 自动生成
-  name: string; // Agent 名称
-  description?: string | null; // Agent 描述
-  answerStyle: "strict" | "concise" | "teaching" | "support" | string; // 回答风格，默认 strict
-  knowledgeScope: string; // JSON 字符串，保存 Agent 允许检索的知识范围
-  showReferences: boolean; // 是否展示引用来源，默认 true
-  allowKnowledgeCapture: boolean; // 是否允许从对话中沉淀新知识，默认 false
-  status: "draft" | "active" | "disabled" | string; // Agent 状态，默认 draft
-  systemPrompt?: string | null; // 根据 Agent 配置生成的 system prompt
-  createdAt: Date; // 创建时间
-  updatedAt: Date; // 更新时间，自动更新
-  conversations?: AgentConversation[]; // 关联的对话记录，由成员 F 的问答模块使用
-};
-```
+## KnowledgeTag
 
-索引：
+全局标签主数据。
 
-```prisma
-@@index([status])
-@@index([answerStyle])
-@@index([createdAt])
-```
+| 字段        | 说明             |
+| ----------- | ---------------- |
+| `id`        | 主键。           |
+| `name`      | 标签名称，唯一。 |
+| `color`     | 颜色。           |
+| `sortOrder` | 排序值。         |
+
+## ExpertAgent
+
+专家 Agent 配置表。
+
+| 字段                    | 说明                            |
+| ----------------------- | ------------------------------- |
+| `id`                    | 主键。                          |
+| `name`                  | Agent 名称。                    |
+| `description`           | 描述。                          |
+| `answerStyle`           | 回答风格，默认 `strict`。       |
+| `knowledgeScope`        | JSON 字符串形式的知识范围配置。 |
+| `showReferences`        | 是否展示引用。                  |
+| `allowKnowledgeCapture` | 是否允许提示知识沉淀。          |
+| `status`                | 状态，默认 `draft`。            |
+| `systemPrompt`          | 系统提示词。                    |
+
+## AgentConversation
+
+Agent 会话表。
+
+| 字段                    | 说明                          |
+| ----------------------- | ----------------------------- |
+| `id`                    | 主键。                        |
+| `agentId`               | 外键，指向 `ExpertAgent.id`。 |
+| `title`                 | 会话标题。                    |
+| `memorySummary`         | 长期记忆摘要。                |
+| `memoryCursorMessageId` | 已压缩到记忆的消息游标。      |
+| `memoryFailureCount`    | 记忆压缩失败次数。            |
+| `status`                | 会话状态。                    |
+
+## AgentMessage
+
+Agent 消息表。
+
+| 字段             | 说明                                |
+| ---------------- | ----------------------------------- |
+| `id`             | 主键。                              |
+| `conversationId` | 外键，指向 `AgentConversation.id`。 |
+| `role`           | 消息角色。                          |
+| `content`        | 消息内容。                          |
+| `citationsJson`  | 引用 JSON。                         |
+
+## UsageLog
+
+RAG 使用日志表。
+
+| 字段         | 说明                                       |
+| ------------ | ------------------------------------------ |
+| `id`         | 主键。                                     |
+| `source`     | 来源，默认 `rag_retrieve`。                |
+| `query`      | 用户问题。                                 |
+| `mode`       | 检索模式。                                 |
+| `scope`      | 检索范围 JSON。                            |
+| `hitCount`   | 命中引用数。                               |
+| `noHit`      | 是否无命中。                               |
+| `references` | Prisma 关系字段，访问 `UsageReference[]`。 |
+
+## UsageReference
+
+RAG 命中引用表。
+
+| 字段              | 说明                                         |
+| ----------------- | -------------------------------------------- |
+| `id`              | 主键。                                       |
+| `usageLogId`      | 外键，指向 `UsageLog.id`。                   |
+| `knowledgeBaseId` | 命中的知识库 ID。                            |
+| `knowledgeId`     | 当前语义为 `DocumentSource.id`。             |
+| `chunkId`         | 当前语义为 `DocumentChunk.id`。              |
+| `title`           | 引用标题。                                   |
+| `type`            | 新 chunk 类型字段。                          |
+| `chunkType`       | 旧兼容字段，短期保留；写入时与 `type` 同值。 |
+
+读取引用时优先使用 `type`，兼容期内可回退到 `chunkType`。

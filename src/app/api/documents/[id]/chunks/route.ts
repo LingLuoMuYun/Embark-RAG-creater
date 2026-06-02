@@ -1,36 +1,29 @@
-import {
-  getDocumentChunksService,
-  replaceDocumentChunksService,
-} from "@/features/knowledge-bases/server/knowledge-document-service";
-import {
-  idParamsSchema,
-  replaceKnowledgeChunksSchema,
-} from "@/features/knowledge-bases/server/schemas";
-import { handleRouteError, successResponse } from "@/lib/api-response";
+import { NextRequest, NextResponse } from "next/server";
 
-type RouteContext = {
-  params: Promise<{ id: string }>;
-};
+import { getDocumentChunks } from "@/server/services/document.service";
+import { documentIdSchema } from "@/features/document/document.validation";
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const params = idParamsSchema.parse(await context.params);
-    const data = await getDocumentChunksService(params.id);
+    const { id } = await params;
+    const parsed = documentIdSchema.safeParse({ id });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: { code: "VALIDATION_ERROR", message: "Invalid document id" } },
+        { status: 400 }
+      );
+    }
 
-    return successResponse(data);
+    const chunks = await getDocumentChunks(id);
+    return NextResponse.json({ success: true, data: chunks });
   } catch (error) {
-    return handleRouteError(error);
-  }
-}
-
-export async function PUT(request: Request, context: RouteContext) {
-  try {
-    const params = idParamsSchema.parse(await context.params);
-    const body = replaceKnowledgeChunksSchema.parse(await request.json());
-    const data = await replaceDocumentChunksService(params.id, body.chunks);
-
-    return successResponse(data);
-  } catch (error) {
-    return handleRouteError(error);
+    const message = error instanceof Error ? error.message : "Failed to get chunks";
+    return NextResponse.json(
+      { success: false, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 }
+    );
   }
 }

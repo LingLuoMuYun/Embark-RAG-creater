@@ -1,48 +1,104 @@
-import {
-  deleteDocumentService,
-  getDocumentDetailService,
-  updateDocumentService,
-} from "@/features/knowledge-bases/server/knowledge-document-service";
-import {
-  idParamsSchema,
-  updateKnowledgeDocumentSchema,
-} from "@/features/knowledge-bases/server/schemas";
-import { handleRouteError, successResponse } from "@/lib/api-response";
+import { NextRequest, NextResponse } from "next/server";
 
-type RouteContext = {
-  params: Promise<{ id: string }>;
-};
-// 获取单个文档详情;
-export async function GET(_request: Request, context: RouteContext) {
+import { getDocumentById, deleteDocument, updateDocumentContent } from "@/server/services/document.service";
+import { documentIdSchema, updateDocumentSchema } from "@/features/document/document.validation";
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const params = idParamsSchema.parse(await context.params);
-    const data = await getDocumentDetailService(params.id);
+    const { id } = await params;
+    const parsed = documentIdSchema.safeParse({ id });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: { code: "VALIDATION_ERROR", message: "Invalid document id" } },
+        { status: 400 }
+      );
+    }
 
-    return successResponse(data);
+    const doc = await getDocumentById(id);
+
+    if (!doc) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Document not found" } },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: doc });
   } catch (error) {
-    return handleRouteError(error);
+    const message = error instanceof Error ? error.message : "Failed to get document";
+    return NextResponse.json(
+      { success: false, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 }
+    );
   }
 }
-// 更新文档元信息、内容、解析状态、启用状态等。
-export async function PATCH(request: Request, context: RouteContext) {
-  try {
-    const params = idParamsSchema.parse(await context.params);
-    const input = updateKnowledgeDocumentSchema.parse(await request.json());
-    const data = await updateDocumentService(params.id, input);
 
-    return successResponse(data);
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+    const parsed = updateDocumentSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: { code: "VALIDATION_ERROR", message: parsed.error.issues[0].message } },
+        { status: 400 }
+      );
+    }
+
+    const doc = await updateDocumentContent(id, parsed.data.content);
+    if (!doc) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Document not found" } },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: doc });
   } catch (error) {
-    return handleRouteError(error);
+    const message = error instanceof Error ? error.message : "Failed to update document";
+    return NextResponse.json(
+      { success: false, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 }
+    );
   }
 }
-// 删除指定文档。
-export async function DELETE(_request: Request, context: RouteContext) {
-  try {
-    const params = idParamsSchema.parse(await context.params);
-    const data = await deleteDocumentService(params.id);
 
-    return successResponse(data);
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const parsed = documentIdSchema.safeParse({ id });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: { code: "VALIDATION_ERROR", message: "Invalid document id" } },
+        { status: 400 }
+      );
+    }
+
+    const doc = await deleteDocument(id);
+
+    if (!doc) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Document not found" } },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: { id } });
   } catch (error) {
-    return handleRouteError(error);
+    const message = error instanceof Error ? error.message : "Failed to delete document";
+    return NextResponse.json(
+      { success: false, error: { code: "INTERNAL_ERROR", message } },
+      { status: 500 }
+    );
   }
 }

@@ -68,8 +68,10 @@ export function DocumentChunksDialog({
                     {chunk.content || "暂无内容"}
                   </p>
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    <span>Token：{chunk.tokenCount ?? 0}</span>
-                    <span>创建时间：{formatDate(chunk.createdAt)}</span>
+                    <span>{chunk.type}</span>
+                    {chunk.category ? <span>{chunk.category}</span> : null}
+                    <span>Token: {chunk.tokenCount ?? 0}</span>
+                    <span>创建时间: {formatDate(chunk.createdAt)}</span>
                   </div>
                 </CardContent>
               </Card>

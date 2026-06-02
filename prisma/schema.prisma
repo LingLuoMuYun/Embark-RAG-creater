@@ -6,6 +6,7 @@ generator client {
 datasource db {
   provider = "sqlite"
 }
+
 model KnowledgeBase {
   id          String  @id @default(cuid())
   name        String  @unique
@@ -26,36 +27,6 @@ model KnowledgeBase {
 
   @@index([status])
 }
-model KnowledgeDocument {
-  id    String @id @default(cuid())
-  title String
-
-  sourceType String @default("manual")
-
-  fileName String?
-  fileUrl  String?
-  mimeType String?
-  fileSize Int?
-
-  rawContent String?
-
-  chunkSize    Int @default(800)
-  chunkOverlap Int @default(100)
-
-  parseStatus String @default("pending")
-  status      String @default("active")
-  error       String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  knowledgeBases KnowledgeBaseDocument[]
-  chunks         KnowledgeChunk[]
-
-  @@index([sourceType])
-  @@index([parseStatus])
-  @@index([status])
-}
 
 model KnowledgeBaseDocument {
   id              String @id @default(cuid())
@@ -68,8 +39,8 @@ model KnowledgeBaseDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase  @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document      DocumentSource @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([knowledgeBaseId, documentId])
   @@index([knowledgeBaseId])
@@ -77,27 +48,187 @@ model KnowledgeBaseDocument {
   @@index([status])
 }
 
+model DocumentSource {
+  id           String   @id @default(cuid())
+  title        String
+  sourceType   String   @default("manual")
+  originalName String?
+  fileType     String?
+  fileName     String?
+  fileUrl      String?
+  mimeType     String?
+  fileSize     Int?
+  status       String   @default("uploading")
+  content      String?
+  rawContent   String?
+  parseStatus  String   @default("pending")
+  errorMessage String?
+  chunkCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-model KnowledgeChunk {
-  id         String @id @default(cuid())
-  documentId String
+  chunks         DocumentChunk[]
+  knowledgeBases KnowledgeBaseDocument[]
 
-  content    String
-  chunkIndex Int
+  @@index([status])
+  @@index([sourceType])
+  @@index([parseStatus])
+}
+
+model DocumentChunk {
+  id               String @id @default(cuid())
+  documentSourceId String
+  chunkIndex       Int
+  content          String
+  charStart        Int?
+  charEnd          Int?
 
   embedding String?
+  category  String?
+  type      String  @default("note")
 
   status String @default("active")
-
-  startIndex Int?
-  endIndex   Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentSource DocumentSource @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
 
-  @@index([documentId])
+  @@index([documentSourceId])
+  @@index([documentSourceId, chunkIndex])
   @@index([status])
-  @@index([documentId, status])
+  @@index([type])
+  @@index([category])
+}
+
+model KnowledgeCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  color       String?
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([createdAt])
+}
+
+model KnowledgeTag {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  color     String?
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([createdAt])
+}
+
+model ExpertAgent {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  answerStyle    String @default("strict")
+  knowledgeScope String @default("{}")
+
+  showReferences        Boolean @default(true)
+  allowKnowledgeCapture Boolean @default(false)
+
+  status       String  @default("draft")
+  systemPrompt String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations AgentConversation[]
+
+  @@index([status])
+  @@index([answerStyle])
+  @@index([createdAt])
+}
+
+model AgentConversation {
+  id                    String  @id @default(cuid())
+  agentId               String
+  title                 String
+  memorySummary         String?
+  memoryCursorMessageId String?
+  memoryFailureCount    Int     @default(0)
+  status                String  @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent    ExpertAgent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  messages AgentMessage[]
+
+  @@index([agentId])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model AgentMessage {
+  id             String  @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  citationsJson  String?
+
+  createdAt DateTime @default(now())
+
+  conversation AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model UsageLog {
+  id String @id @default(cuid())
+
+  source String @default("rag_retrieve")
+  query  String
+  mode   String @default("balanced")
+  scope  String
+
+  hitCount Int     @default(0)
+  noHit    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  references UsageReference[]
+
+  @@index([source])
+  @@index([noHit])
+  @@index([query])
+  @@index([createdAt])
+}
+
+model UsageReference {
+  id         String @id @default(cuid())
+  usageLogId String
+
+  knowledgeBaseId String
+  knowledgeId     String
+  chunkId         String
+  title           String
+  type            String
+  chunkType       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usageLog UsageLog @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
+
+  @@index([usageLogId])
+  @@index([knowledgeBaseId])
+  @@index([knowledgeId])
+  @@index([chunkId])
+  @@index([type])
+  @@index([chunkType])
 }

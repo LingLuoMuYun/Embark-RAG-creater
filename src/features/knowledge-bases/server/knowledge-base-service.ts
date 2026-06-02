@@ -61,6 +61,13 @@ export async function getKnowledgeBaseTreeService(id: string) {
               chunks: {
                 orderBy: { chunkIndex: "asc" },
               },
+              knowledgeBases: {
+                include: {
+                  knowledgeBase: {
+                    select: { id: true, name: true, status: true },
+                  },
+                },
+              },
             },
           },
         },
@@ -81,7 +88,7 @@ async function assertDocumentIdsExist(
 
   if (uniqueDocumentIds.length === 0) return uniqueDocumentIds;
 
-  const existingDocuments = await tx.knowledgeDocument.findMany({
+  const existingDocuments = await tx.documentSource.findMany({
     where: { id: { in: uniqueDocumentIds } },
     select: { id: true },
   });
@@ -100,32 +107,39 @@ async function createDocumentWithChunks(
   tx: Prisma.TransactionClient,
   input: CreateKnowledgeDocumentInput
 ) {
-  return tx.knowledgeDocument.create({
+  const chunks = input.chunks ?? [];
+
+  return tx.documentSource.create({
     data: {
       title: input.title,
       sourceType: input.sourceType,
+      originalName: input.originalName ?? input.fileName,
+      fileType: input.fileType,
       fileName: input.fileName,
       fileUrl: input.fileUrl,
       mimeType: input.mimeType,
       fileSize: input.fileSize,
-      rawContent: input.rawContent,
-      chunkSize: input.chunkSize,
-      chunkOverlap: input.chunkOverlap,
+      content: input.content ?? input.rawContent,
+      rawContent: input.rawContent ?? input.content,
       parseStatus: input.parseStatus,
       status: input.status,
-      error: input.error,
-      chunks: input.chunks
-        ? {
-            create: input.chunks.map((chunk) => ({
-              content: chunk.content,
-              chunkIndex: chunk.chunkIndex,
-              embedding: chunk.embedding,
-              status: chunk.status,
-              startIndex: chunk.startIndex,
-              endIndex: chunk.endIndex,
-            })),
-          }
-        : undefined,
+      errorMessage: input.errorMessage,
+      chunkCount: chunks.length,
+      chunks:
+        chunks.length > 0
+          ? {
+              create: chunks.map((chunk) => ({
+                content: chunk.content,
+                chunkIndex: chunk.chunkIndex,
+                charStart: chunk.charStart,
+                charEnd: chunk.charEnd,
+                embedding: chunk.embedding,
+                category: chunk.category,
+                type: chunk.type,
+                status: chunk.status,
+              })),
+            }
+          : undefined,
     },
     select: { id: true },
   });
@@ -176,6 +190,13 @@ export async function createKnowledgeBaseService(
                   chunks: {
                     orderBy: { chunkIndex: "asc" },
                   },
+                  knowledgeBases: {
+                    include: {
+                      knowledgeBase: {
+                        select: { id: true, name: true, status: true },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -220,6 +241,13 @@ export async function updateKnowledgeBaseService(
               include: {
                 chunks: {
                   orderBy: { chunkIndex: "asc" },
+                },
+                knowledgeBases: {
+                  include: {
+                    knowledgeBase: {
+                      select: { id: true, name: true, status: true },
+                    },
+                  },
                 },
               },
             },

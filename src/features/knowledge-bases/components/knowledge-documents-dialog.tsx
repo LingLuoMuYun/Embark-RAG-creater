@@ -93,8 +93,12 @@ function createChunksFromText(rawContent: string) {
   const chunks: Array<{
     content: string;
     chunkIndex: number;
-    startIndex: number;
-    endIndex: number;
+    charStart: number;
+    charEnd: number;
+    embedding: null;
+    category: null;
+    type: "note";
+    status: "active";
   }> = [];
 
   for (let startIndex = 0; startIndex < content.length; startIndex += step) {
@@ -103,8 +107,12 @@ function createChunksFromText(rawContent: string) {
     chunks.push({
       content: content.slice(startIndex, endIndex),
       chunkIndex: chunks.length,
-      startIndex,
-      endIndex,
+      charStart: startIndex,
+      charEnd: endIndex,
+      embedding: null,
+      category: null,
+      type: "note",
+      status: "active",
     });
 
     if (endIndex >= content.length) break;
