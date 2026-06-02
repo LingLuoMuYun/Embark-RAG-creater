@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `已确认 ${count} 条知识，进入待审核状态`,
+      message: `已确认 ${count} 条知识，已进入可用状态`,
     });
   } catch (err: unknown) {
     const message =
