@@ -7,6 +7,7 @@ import { AdminShell } from "@/components/layout/admin-shell";
 import { DocumentUploader } from "@/features/document/components/document-uploader";
 import { DocumentList } from "@/features/document/components/document-list";
 import { DocumentPreview } from "@/features/document/components/document-preview";
+import { FeishuImport } from "@/features/feishu/components/feishu-import";
 
 export default function DocumentsPage() {
   const router = useRouter();
@@ -58,6 +59,8 @@ export default function DocumentsPage() {
           </p>
           <DocumentUploader onUploaded={handleUploaded} />
         </div>
+
+        <FeishuImport onImported={handleUploaded} />
 
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">

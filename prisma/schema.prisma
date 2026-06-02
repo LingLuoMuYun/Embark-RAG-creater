@@ -145,7 +145,7 @@ model DocumentChunk {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  documentSource DocumentSource? @relation(fields: [documentSourceId], references: [id], onDelete: SetNull)
+  documentSource DocumentSource? @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
 
   @@index([documentSourceId])
   @@index([chunkStatus])

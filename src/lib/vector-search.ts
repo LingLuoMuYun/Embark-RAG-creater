@@ -93,6 +93,8 @@ export async function semanticSearch(
 
     const score = cosineSimilarity(queryVector, vector);
 
+    if (!chunk.documentSource) return null;
+
     return {
       chunkId: chunk.id,
       documentSourceId: chunk.documentSourceId,

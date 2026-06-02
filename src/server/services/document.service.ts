@@ -197,12 +197,19 @@ export async function parseDocument(id: string): Promise<{
       return { rawContent, chunkCount: doc.chunkCount };
     }
 
-    const hasTable = containsTable(rawContent);
-    const semanticChunks = hasTable
-      ? null
-      : await splitTextSemantic(rawContent);
-    const chunks =
-      semanticChunks ?? splitTextIntoChunks(rawContent);
+    const imageTypes = ["png", "jpg", "jpeg", "webp", "bmp"];
+    const isImage = imageTypes.includes(doc.fileType);
+
+    let chunks: TextChunk[];
+    if (isImage) {
+      chunks = [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
+    } else {
+      const hasTable = containsTable(rawContent);
+      const semanticChunks = hasTable
+        ? null
+        : await splitTextSemantic(rawContent);
+      chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.documentChunk.deleteMany({
@@ -246,11 +253,19 @@ export async function updateDocumentContent(id: string, rawContent: string) {
 
   if (doc.rawContent === rawContent) return doc;
 
-  const hasTable = containsTable(rawContent);
-  const semanticChunks = hasTable
-    ? null
-    : await splitTextSemantic(rawContent);
-  const chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
+  const imageTypes = ["png", "jpg", "jpeg", "webp", "bmp"];
+  const isImage = imageTypes.includes(doc.fileType);
+
+  let chunks: TextChunk[];
+  if (isImage) {
+    chunks = [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
+  } else {
+    const hasTable = containsTable(rawContent);
+    const semanticChunks = hasTable
+      ? null
+      : await splitTextSemantic(rawContent);
+    chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.documentChunk.deleteMany({

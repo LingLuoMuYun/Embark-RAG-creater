@@ -66,7 +66,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
   const [total, setTotal] = useState(0);
   const pageSize = 10;
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [extractingId, setExtractingId] = useState<string | null>(null);
+  const [extractingIds, setExtractingIds] = useState<Set<string>>(new Set());
   const [extractMsg, setExtractMsg] = useState<string | null>(null);
   const [batchDeleting, setBatchDeleting] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -98,7 +98,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       if (json.success) {
         setDocuments(json.data.items);
         setTotal(json.data.total);
-        setSelected(new Set());
         hasLoadedRef.current = true;
       } else {
         throw new Error(json.error?.message || "加载失败");
@@ -184,7 +183,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
   };
 
   async function handleExtract(id: string) {
-    setExtractingId(id);
+    setExtractingIds((prev) => new Set(prev).add(id));
     setExtractMsg(null);
     try {
       const res = await fetch("/api/ai/extract/from-document", {
@@ -202,7 +201,11 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
     } catch {
       setExtractMsg("网络错误，请重试");
     } finally {
-      setExtractingId(null);
+      setExtractingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -212,7 +215,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
         <button
           key={opt.key}
           onClick={() => { setFilter(opt.key); setPage(1); setSelected(new Set()); }}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          className={`rounded-full px-2 py-1 text-xs font-medium transition-colors ${
             filter === opt.key
               ? "bg-blue-600 text-white"
               : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
@@ -226,7 +229,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
           <button
             onClick={() => { onParse(parseIds); }}
             disabled={batchDeleting}
-            className="rounded px-3 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            className="rounded px-2 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >
             批量解析（{parseIds.length}）
           </button>
@@ -235,7 +238,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
           <button
             onClick={handleBatchDelete}
             disabled={batchDeleting}
-            className="rounded px-3 py-1 text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+            className="rounded px-2 py-1 text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
           >
             {batchDeleting ? "删除中..." : `批量删除（${selectedList.length}）`}
           </button>
@@ -276,14 +279,14 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                     className="h-3.5 w-3.5 rounded"
                   />
                 </th>
-                <th className="px-4 py-3">文件名</th>
-                <th className="px-4 py-3">类型</th>
-                <th className="px-4 py-3">大小</th>
-                <th className="px-4 py-3">分段</th>
-                <th className="px-4 py-3">AI知识</th>
-                <th className="px-4 py-3">状态</th>
-                <th className="px-4 py-3">上传时间</th>
-                <th className="px-4 py-3">操作</th>
+                <th className="px-3 py-3">文件名</th>
+                <th className="px-3 py-3">类型</th>
+                <th className="px-3 py-3">大小</th>
+                <th className="px-3 py-3">分段</th>
+                <th className="px-3 py-3">AI知识</th>
+                <th className="px-3 py-3">状态</th>
+                <th className="px-3 py-3">上传时间</th>
+                <th className="px-3 py-3">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -300,23 +303,23 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                         className="h-3.5 w-3.5 rounded border-zinc-300"
                       />
                     </td>
-                    <td className="max-w-[180px] truncate px-4 py-3 font-medium text-zinc-900">
+                    <td className="max-w-[180px] truncate px-3 py-3 font-medium text-zinc-900">
                       {doc.originalName}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">
+                    <td className="px-3 py-3 text-zinc-500">
                       .{doc.fileType}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">
+                    <td className="px-3 py-3 text-zinc-500">
                       {formatFileSize(doc.fileSize)}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">
+                    <td className="px-3 py-3 text-zinc-500">
                       {doc.status === "parsed" && doc.chunkCount > 0
                         ? `${doc.chunkCount} 段`
                         : doc.status === "parsing"
                           ? "..."
                           : "-"}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       {hasCandidates ? (
                         <div className="flex items-center gap-1.5">
                           {doc.candidatePending > 0 && (
@@ -337,17 +340,17 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                         <span className="text-xs text-zinc-400">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <span
                         className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${statusDisplay.color}`}
                       >
                         {statusDisplay.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">
+                    <td className="px-3 py-3 text-zinc-500">
                       {formatDate(doc.createdAt)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
                         {doc.status === "uploaded" && (
                           <button
@@ -367,10 +370,10 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                             </button>
                             <button
                               onClick={() => handleExtract(doc.id)}
-                              disabled={extractingId === doc.id}
+                              disabled={extractingIds.has(doc.id)}
                               className="rounded px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 disabled:opacity-50"
                             >
-                              {extractingId === doc.id ? "提炼中..." : "提炼"}
+                              {extractingIds.has(doc.id) ? "提炼中..." : "提炼"}
                             </button>
                             {doc.candidatePending > 0 && (
                               <button
