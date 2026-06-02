@@ -247,8 +247,8 @@ export function KnowledgeDocumentsDialog({
         mimeType: file.type || undefined,
         fileSize: file.size,
         rawContent,
-        parseStatus: rawContent ? "success" : "pending",
-        status: "active",
+        status: rawContent ? "parsed" : "pending",
+        activeStatus: "active",
         knowledgeBaseIds: [selectedId],
         chunks,
       });

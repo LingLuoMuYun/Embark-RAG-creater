@@ -1,0 +1,71 @@
+HTML：
+页面导入样式时，使用 link 和 @import 有什么区别？
+对HTML语义化的理解 
+script标签中defer和async的区别
+meta标签
+HTML5有哪些更新
+对 web worker 的理解
+行内元素有哪些？块级元素有哪些？ 空(void)元素有那些？
+布局模型
+标准模式与兼容模式各有什么区别？
+
+CSS：
+两栏布局三栏布局
+居中
+display
+css3新特性
+
+JS：
+原型原型链
+js数组⽅法，可能会让你尽可能的说名，什么样的数组⽅法不改变原数组 
+forEach map push pop shift unshift splice slice concat join sort reverse some every filter 
+ES6新特性 
+this的指向 
+bind apply call 区别 
+箭头函数
+闭包
+事件循环机制
+
+
+网络：
+GET和POST的请求的区别
+http1.1和2区别 优缺点 
+http2解决了什么问题 （次重点-仍然有什么解决不了的问题 http3+udp怎么解决） 
+https和http的区别，它⽤了什么机制去保证安全 
+http状态码 
+常⻅的http请求⽅法 
+与缓存相关的HTTP请求头有哪些 
+强缓存：
+Expires 1.0 
+Cache-Control 1，1 
+协商缓存：
+Etag、If-None-Match 1.1 
+Last-Modified、If-Modified-Since（1.0） 
+输⼊url会发⽣什么 
+跨域-同源策略
+
+手写题：
+防抖、节流
+深浅拷贝
+promise.all
+new 
+instanceof 
+flat 
+call 
+函数柯⾥化
+数组api
+url解析、千分位隔开 
+
+
+
+算法题
+代码输出题
+
+
+
+
+
+
+
+
+

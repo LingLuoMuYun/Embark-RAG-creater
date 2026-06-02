@@ -16,36 +16,45 @@ type KnowledgeBaseListRecord = {
   }[];
 };
 
-type KnowledgeChunkRecord = {
+type DocumentChunkRecord = {
   id: string;
-  documentId: string;
+  documentSourceId: string | null;
   content: string;
   chunkIndex: number;
   embedding: string | null;
-  status: string;
-  startIndex: number | null;
-  endIndex: number | null;
+  chunkStatus: string;
+  charStart: number;
+  charEnd: number;
+  chunkType: string;
+  title: string | null;
+  suggestedCategory: string | null;
+  suggestedTags: string | null;
+  knowledgeType: string | null;
+  reviewStatus: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
-type KnowledgeDocumentRecord = {
+type DocumentSourceRecord = {
   id: string;
   title: string;
+  originalName: string;
+  fileType: string;
   sourceType: string;
   fileName: string | null;
   fileUrl: string | null;
   mimeType: string | null;
-  fileSize: number | null;
+  fileSize: number;
   rawContent: string | null;
   chunkSize: number;
   chunkOverlap: number;
-  parseStatus: string;
   status: string;
+  activeStatus: string;
   error: string | null;
+  chunkCount: number;
   createdAt: Date;
   updatedAt: Date;
-  chunks?: KnowledgeChunkRecord[];
+  chunks?: DocumentChunkRecord[];
   knowledgeBases?: {
     id: string;
     knowledgeBase: {
@@ -56,16 +65,22 @@ type KnowledgeDocumentRecord = {
   }[];
 };
 
-export function mapKnowledgeChunk(chunk: KnowledgeChunkRecord) {
+export function mapDocumentChunk(chunk: DocumentChunkRecord) {
   return {
     id: chunk.id,
-    documentId: chunk.documentId,
+    documentId: chunk.documentSourceId,
     content: chunk.content,
     chunkIndex: chunk.chunkIndex,
     embedding: chunk.embedding,
-    status: chunk.status,
-    startIndex: chunk.startIndex,
-    endIndex: chunk.endIndex,
+    status: chunk.chunkStatus,
+    startIndex: chunk.charStart,
+    endIndex: chunk.charEnd,
+    chunkType: chunk.chunkType,
+    title: chunk.title,
+    suggestedCategory: chunk.suggestedCategory,
+    suggestedTags: chunk.suggestedTags,
+    knowledgeType: chunk.knowledgeType,
+    reviewStatus: chunk.reviewStatus,
     createdAt: chunk.createdAt.toISOString(),
     updatedAt: chunk.updatedAt.toISOString(),
   };
@@ -91,7 +106,7 @@ export function mapKnowledgeBaseListItem(item: KnowledgeBaseListRecord) {
   };
 }
 
-export function mapKnowledgeDocumentListItem(document: KnowledgeDocumentRecord) {
+export function mapDocumentSourceListItem(document: DocumentSourceRecord) {
   return {
     id: document.id,
     title: document.title,
@@ -105,8 +120,8 @@ export function mapKnowledgeDocumentListItem(document: KnowledgeDocumentRecord) 
     rawContent: document.rawContent,
     chunkSize: document.chunkSize,
     chunkOverlap: document.chunkOverlap,
-    parseStatus: document.parseStatus,
     status: document.status,
+    activeStatus: document.activeStatus,
     error: document.error,
     chunkCount: document.chunks?.length ?? 0,
     knowledgeBaseCount: document.knowledgeBases?.length ?? 0,
@@ -116,7 +131,7 @@ export function mapKnowledgeDocumentListItem(document: KnowledgeDocumentRecord) 
   };
 }
 
-export function mapKnowledgeDocumentDetail(document: KnowledgeDocumentRecord) {
+export function mapDocumentSourceDetail(document: DocumentSourceRecord) {
   return {
     id: document.id,
     title: document.title,
@@ -130,13 +145,13 @@ export function mapKnowledgeDocumentDetail(document: KnowledgeDocumentRecord) {
     rawContent: document.rawContent,
     chunkSize: document.chunkSize,
     chunkOverlap: document.chunkOverlap,
-    parseStatus: document.parseStatus,
     status: document.status,
+    activeStatus: document.activeStatus,
     error: document.error,
     uploadedAt: document.createdAt.toISOString(),
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
-    chunks: (document.chunks ?? []).map(mapKnowledgeChunk),
+    chunks: (document.chunks ?? []).map(mapDocumentChunk),
     knowledgeBases: (document.knowledgeBases ?? []).map((relation) => ({
       relationId: relation.id,
       id: relation.knowledgeBase.id,
@@ -151,8 +166,8 @@ type KnowledgeBaseTreeRecord = Omit<KnowledgeBaseListRecord, "documents"> & {
     id: string;
     status: string;
     sortOrder: number;
-    document: KnowledgeDocumentRecord & {
-      chunks: KnowledgeChunkRecord[];
+    document: DocumentSourceRecord & {
+      chunks: DocumentChunkRecord[];
     };
   }[];
 };
@@ -173,7 +188,7 @@ export function mapKnowledgeBaseTree(item: KnowledgeBaseTreeRecord) {
       relationId: relation.id,
       relationStatus: relation.status,
       sortOrder: relation.sortOrder,
-      ...mapKnowledgeDocumentDetail(relation.document),
+      ...mapDocumentSourceDetail(relation.document),
     })),
   };
 }

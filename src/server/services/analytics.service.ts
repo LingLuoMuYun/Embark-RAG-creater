@@ -31,8 +31,6 @@ function toReferenceKey(reference: {
 }
 
 function normalizeReferences(input: UsageLogCreateInput) {
-  // Prefer explicit references from B's retrieve response. If a caller only
-  // sends contexts, derive reference records from those contexts for analytics.
   const references =
     input.references.length > 0
       ? input.references
@@ -90,7 +88,6 @@ function normalizeStatusCounts(
 
 export async function createUsageLog(input: UsageLogCreateInput) {
   const references = normalizeReferences(input);
-  // Empty contexts and references mean the user question did not hit knowledge.
   const noHit = input.contexts.length === 0 && references.length === 0;
 
   return prisma.usageLog.create({
@@ -140,7 +137,7 @@ export async function getHotKnowledge(limit = 10) {
 }
 
 export async function getRecentKnowledge(limit = 10) {
-  const documents = await prisma.knowledgeDocument.findMany({
+  const documents = await prisma.documentSource.findMany({
     orderBy: { createdAt: "desc" },
     take: limit,
     select: {
@@ -148,8 +145,8 @@ export async function getRecentKnowledge(limit = 10) {
       knowledgeBaseId: true,
       title: true,
       sourceType: true,
+      activeStatus: true,
       status: true,
-      parseStatus: true,
       createdAt: true,
     },
   });
@@ -159,25 +156,21 @@ export async function getRecentKnowledge(limit = 10) {
     knowledgeBaseId: document.knowledgeBaseId,
     title: document.title,
     sourceType: document.sourceType,
-    status: document.status,
-    parseStatus: document.parseStatus,
+    status: document.activeStatus,
+    parseStatus: document.status,
     createdAt: document.createdAt.toISOString(),
   }));
 }
 
 /**
  * 分类知识数量分布。
- *
- * 当前 KnowledgeDocument 尚未绑定 categoryId（待成员 A 联调），
- * 因此有分类的 count 为 0，全部知识暂时归入「未分类」。
- * A 在知识表增加 categoryId 后，只需更新本函数的计数逻辑即可。
  */
 export async function getCategoryDistribution() {
   const [categories, totalKnowledge] = await Promise.all([
     prisma.knowledgeCategory.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
-    prisma.knowledgeDocument.count(),
+    prisma.documentSource.count(),
   ]);
 
   const items = categories.map((category) => ({
@@ -252,8 +245,8 @@ export async function getAnalyticsOverview() {
     prisma.documentSource.count({ where: { status: "parsed" } }),
     prisma.documentChunk.count(),
     prisma.knowledgeBase.count(),
-    prisma.knowledgeDocument.count(),
-    prisma.knowledgeChunk.count(),
+    prisma.documentSource.count(),
+    prisma.documentChunk.count(),
     prisma.expertAgent.count(),
     prisma.expertAgent.count({ where: { status: "active" } }),
     prisma.usageLog.count(),
@@ -292,7 +285,7 @@ export async function getAnalyticsOverview() {
     }),
     getHotKnowledge(5),
     getKnowledgeGaps(5),
-    prisma.knowledgeDocument.count({ where: { status: "pending" } }),
+    prisma.documentSource.count({ where: { status: "pending" } }),
     getRecentKnowledge(RECENT_KNOWLEDGE_LIMIT),
     getCategoryDistribution(),
   ]);

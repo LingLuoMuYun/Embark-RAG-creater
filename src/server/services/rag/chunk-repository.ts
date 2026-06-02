@@ -12,7 +12,7 @@ type ChunkSource = "mock" | "database";
  *
  * 职责：
  * 1. 屏蔽 mock 数据和真实数据库之间的数据来源差异。
- * 2. 把当前 Prisma schema 中的 KnowledgeChunk 转成 RAG 对接文档里的 KnowledgeChunk。
+ * 2. 把当前 Prisma schema 中的 DocumentChunk 转成 RAG 对接文档里的 KnowledgeChunk。
  * 3. 让 retriever 只依赖统一的领域类型，不关心底层数据来自哪里。
  */
 export async function listKnowledgeChunks(
@@ -36,27 +36,30 @@ async function listDatabaseKnowledgeChunks(
 ): Promise<KnowledgeChunk[]> {
   const { prisma } = await import("@/lib/db");
 
-  const chunks = await prisma.knowledgeChunk.findMany({
+  const chunks = await prisma.documentChunk.findMany({
     where: {
-      knowledgeBaseId: {
-        in: scope.knowledgeBaseIds,
+      chunkStatus: "active",
+      documentSource: {
+        knowledgeBases: {
+          some: { knowledgeBaseId: { in: scope.knowledgeBaseIds } },
+        },
       },
-      documentId: scope.knowledgeIds
+      documentSourceId: scope.knowledgeIds
         ? {
             in: scope.knowledgeIds,
           }
         : undefined,
-      status: "active",
     },
     include: {
-      document: true,
+      documentSource: {
+        include: {
+          knowledgeBases: true,
+        },
+      },
     },
     orderBy: [
       {
-        knowledgeBaseId: "asc",
-      },
-      {
-        documentId: "asc",
+        documentSourceId: "asc",
       },
       {
         chunkIndex: "asc",
@@ -65,26 +68,27 @@ async function listDatabaseKnowledgeChunks(
   });
 
   return chunks.flatMap((chunk) => {
-    if (!chunk.knowledgeBaseId) return [];
+    const kbid = chunk.documentSource?.knowledgeBases?.[0]?.knowledgeBaseId;
+    if (!kbid) return [];
 
     return {
       id: chunk.id,
-      knowledgeBaseId: chunk.knowledgeBaseId,
-      knowledgeId: chunk.documentId,
-      title: chunk.document.title,
+      knowledgeBaseId: kbid,
+      knowledgeId: chunk.documentSourceId ?? chunk.id,
+      title: chunk.documentSource?.title ?? chunk.title ?? "",
       content: chunk.content,
-      status: chunk.status === "active" ? "available" : "disabled",
-      sourceType: normalizeSourceType(chunk.document.sourceType),
-      chunkType: "text",
+      status: chunk.chunkStatus === "active" ? "available" : "disabled",
+      sourceType: normalizeSourceType(chunk.documentSource?.sourceType ?? "import"),
+      chunkType: chunk.chunkType === "knowledge" ? "summary" : "text",
       chunkIndex: chunk.chunkIndex,
       metadata: {
-        fileName: chunk.document.fileName,
-        fileUrl: chunk.document.fileUrl,
-        mimeType: chunk.document.mimeType,
-        fileSize: chunk.document.fileSize,
-        startIndex: chunk.startIndex,
-        endIndex: chunk.endIndex,
-        parseStatus: chunk.document.parseStatus,
+        fileName: chunk.documentSource?.fileName,
+        fileUrl: chunk.documentSource?.fileUrl,
+        mimeType: chunk.documentSource?.mimeType,
+        fileSize: chunk.documentSource?.fileSize,
+        startIndex: chunk.charStart,
+        endIndex: chunk.charEnd,
+        parseStatus: chunk.documentSource?.status,
       },
       createdAt: chunk.createdAt.toISOString(),
       updatedAt: chunk.updatedAt.toISOString(),

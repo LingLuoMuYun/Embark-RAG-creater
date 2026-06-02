@@ -19,6 +19,7 @@ interface Props {
   onEdit: (candidate: Candidate) => void;
   onRetry: () => void;
   loading: boolean;
+  selectedKbCount?: number;
 }
 
 export default function CandidateList({
@@ -28,6 +29,7 @@ export default function CandidateList({
   onEdit,
   onRetry,
   loading,
+  selectedKbCount = 0,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -84,10 +86,13 @@ export default function CandidateList({
           </span>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {selectedKbCount === 0 && (
+            <span className="text-xs text-amber-600">请先在页面顶部选择目标知识库</span>
+          )}
           <button
             onClick={handleConfirm}
-            disabled={selected.size === 0 || loading}
+            disabled={selected.size === 0 || loading || selectedKbCount === 0}
             className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             确认入库 ({selected.size})

@@ -30,6 +30,11 @@ export type RagDoc = {
   name: string;
   size: number;
   uploadedAt: string;
+  sourceType?: string;
+  fileType?: string;
+  rawContent?: string;
+  status?: string;
+  chunks?: RagChunk[];
 };
 
 export type RagChunk = {
@@ -39,6 +44,12 @@ export type RagChunk = {
   tokenCount?: number;
   charCount?: number;
   createdAt?: string;
+  chunkType?: string;
+  title?: string | null;
+  suggestedCategory?: string | null;
+  suggestedTags?: string | null;
+  knowledgeType?: string | null;
+  reviewStatus?: string | null;
 };
 
 export type RagDetail = RagListItem;

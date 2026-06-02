@@ -22,10 +22,14 @@ export async function POST(request: NextRequest) {
 
     const { documentId } = parsed.data;
 
-    // 先删除该文档已有的候选知识
+    // 先删除该文档已有的 pending 候选知识（DocumentChunk where chunkType="knowledge"）
     const { prisma } = await import("@/lib/db");
-    await prisma.candidateKnowledge.deleteMany({
-      where: { documentSourceId: documentId, status: "pending" },
+    await prisma.documentChunk.deleteMany({
+      where: {
+        documentSourceId: documentId,
+        chunkType: "knowledge",
+        reviewStatus: "pending",
+      },
     });
 
     // 重新提炼

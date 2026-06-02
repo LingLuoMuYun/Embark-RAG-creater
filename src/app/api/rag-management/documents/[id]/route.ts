@@ -1,18 +1,18 @@
 import {
-  deleteDocumentService,
+  deleteDocumentSourceService,
   getDocumentDetailService,
-  updateDocumentService,
-} from "@/features/knowledge-bases/server/knowledge-document-service";
+  updateDocumentSourceService,
+} from "@/server/services/document.service";
 import {
   idParamsSchema,
-  updateKnowledgeDocumentSchema,
+  updateDocumentSourceSchema,
 } from "@/features/knowledge-bases/server/schemas";
 import { handleRouteError, successResponse } from "@/lib/api-response";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
-// 获取单个文档详情;
+
 export async function GET(_request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
@@ -23,23 +23,23 @@ export async function GET(_request: Request, context: RouteContext) {
     return handleRouteError(error);
   }
 }
-// 更新文档元信息、内容、解析状态、启用状态等。
+
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
-    const input = updateKnowledgeDocumentSchema.parse(await request.json());
-    const data = await updateDocumentService(params.id, input);
+    const input = updateDocumentSourceSchema.parse(await request.json());
+    const data = await updateDocumentSourceService(params.id, input);
 
     return successResponse(data);
   } catch (error) {
     return handleRouteError(error);
   }
 }
-// 删除指定文档。
+
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
-    const data = await deleteDocumentService(params.id);
+    const data = await deleteDocumentSourceService(params.id);
 
     return successResponse(data);
   } catch (error) {

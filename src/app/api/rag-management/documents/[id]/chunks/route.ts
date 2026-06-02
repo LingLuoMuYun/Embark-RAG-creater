@@ -1,10 +1,10 @@
 import {
   getDocumentChunksService,
   replaceDocumentChunksService,
-} from "@/features/knowledge-bases/server/knowledge-document-service";
+} from "@/server/services/document.service";
 import {
   idParamsSchema,
-  replaceKnowledgeChunksSchema,
+  replaceDocumentChunksSchema,
 } from "@/features/knowledge-bases/server/schemas";
 import { handleRouteError, successResponse } from "@/lib/api-response";
 
@@ -26,7 +26,7 @@ export async function GET(_request: Request, context: RouteContext) {
 export async function PUT(request: Request, context: RouteContext) {
   try {
     const params = idParamsSchema.parse(await context.params);
-    const body = replaceKnowledgeChunksSchema.parse(await request.json());
+    const body = replaceDocumentChunksSchema.parse(await request.json());
     const data = await replaceDocumentChunksService(params.id, body.chunks);
 
     return successResponse(data);

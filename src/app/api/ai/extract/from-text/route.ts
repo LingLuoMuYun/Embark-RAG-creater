@@ -39,17 +39,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 写入候选表
+    // 写入 DocumentChunk（knowledge 类型）
     if (result.candidates && result.candidates.length > 0) {
-      const rows = result.candidates.map((c) => ({
-        title: c.title,
+      const rows = result.candidates.map((c, i) => ({
         content: c.content,
+        title: c.title,
+        chunkType: "knowledge",
+        knowledgeType: c.type,
         suggestedCategory: c.suggestedCategory || null,
         suggestedTags: JSON.stringify(c.suggestedTags || []),
-        type: c.type,
-        status: "pending",
+        reviewStatus: "pending",
+        chunkStatus: "disabled",
+        chunkIndex: i,
+        charStart: 0,
+        charEnd: c.content.length,
       }));
-      await prisma.candidateKnowledge.createMany({ data: rows });
+      await prisma.documentChunk.createMany({ data: rows });
     }
 
     return NextResponse.json({

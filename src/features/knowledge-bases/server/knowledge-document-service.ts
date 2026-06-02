@@ -102,7 +102,6 @@ export async function createDocumentService(input: CreateKnowledgeDocumentInput)
 
     const document = await tx.knowledgeDocument.create({
       data: {
-        knowledgeBaseId: knowledgeBaseIds[0],
         title: input.title,
         sourceType: input.sourceType,
         fileName: input.fileName,
@@ -120,7 +119,6 @@ export async function createDocumentService(input: CreateKnowledgeDocumentInput)
               create: input.chunks.map((chunk) => ({
                 content: chunk.content,
                 chunkIndex: chunk.chunkIndex,
-                knowledgeBaseId: knowledgeBaseIds[0],
                 embedding: chunk.embedding,
                 status: chunk.status,
                 startIndex: chunk.startIndex,
@@ -276,14 +274,7 @@ export async function replaceDocumentChunksService(
   return prisma.$transaction(async (tx) => {
     const document = await tx.knowledgeDocument.findUnique({
       where: { id: documentId },
-      select: {
-        id: true,
-        knowledgeBaseId: true,
-        knowledgeBases: {
-          orderBy: { sortOrder: "asc" },
-          select: { knowledgeBaseId: true },
-        },
-      },
+      select: { id: true },
     });
 
     if (!document) throw notFound("document not found");
@@ -293,14 +284,9 @@ export async function replaceDocumentChunksService(
     });
 
     if (chunks.length > 0) {
-      const knowledgeBaseId =
-        document.knowledgeBaseId ??
-        document.knowledgeBases[0]?.knowledgeBaseId;
-
       await tx.knowledgeChunk.createMany({
         data: chunks.map((chunk) => ({
           documentId,
-          knowledgeBaseId,
           content: chunk.content,
           chunkIndex: chunk.chunkIndex,
           embedding: chunk.embedding,
