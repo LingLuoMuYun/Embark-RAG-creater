@@ -5,7 +5,7 @@ import { badRequest, conflict, notFound } from "./errors";
 import { mapKnowledgeBaseListItem, mapKnowledgeBaseTree } from "./mappers";
 import type {
   CreateKnowledgeBaseInput,
-  CreateKnowledgeDocumentInput,
+  CreateDocumentSourceInput,
   UpdateKnowledgeBaseInput,
 } from "./schemas";
 
@@ -36,7 +36,7 @@ export async function getKnowledgeBaseListService(params: {
           document: {
             include: {
               chunks: {
-                where: { status: "active" },
+                where: { chunkStatus: "active" },
                 select: { id: true },
               },
             },
@@ -81,16 +81,20 @@ async function assertDocumentIdsExist(
 
   if (uniqueDocumentIds.length === 0) return uniqueDocumentIds;
 
-  const existingDocuments = await tx.knowledgeDocument.findMany({
+  const existingDocuments = await tx.documentSource.findMany({
     where: { id: { in: uniqueDocumentIds } },
     select: { id: true },
   });
 
   if (existingDocuments.length !== uniqueDocumentIds.length) {
-    const existingIds = new Set(existingDocuments.map((document) => document.id));
+    const existingIds = new Set(
+      existingDocuments.map((document) => document.id)
+    );
     const missingIds = uniqueDocumentIds.filter((id) => !existingIds.has(id));
 
-    throw badRequest("some documents do not exist", { documentIds: missingIds });
+    throw badRequest("some documents do not exist", {
+      documentIds: missingIds,
+    });
   }
 
   return uniqueDocumentIds;
@@ -98,21 +102,25 @@ async function assertDocumentIdsExist(
 
 async function createDocumentWithChunks(
   tx: Prisma.TransactionClient,
-  input: CreateKnowledgeDocumentInput
+  input: CreateDocumentSourceInput
 ) {
-  return tx.knowledgeDocument.create({
+  return tx.documentSource.create({
     data: {
       title: input.title,
+      originalName: input.fileName ?? input.title,
+      fileType: input.fileName
+        ? (input.fileName.split(".").pop() ?? "txt")
+        : "txt",
       sourceType: input.sourceType,
       fileName: input.fileName,
       fileUrl: input.fileUrl,
       mimeType: input.mimeType,
-      fileSize: input.fileSize,
+      fileSize: input.fileSize ?? 0,
       rawContent: input.rawContent,
       chunkSize: input.chunkSize,
       chunkOverlap: input.chunkOverlap,
-      parseStatus: input.parseStatus,
-      status: input.status,
+      status: input.rawContent ? "parsed" : "pending",
+      activeStatus: input.activeStatus ?? "active",
       error: input.error,
       chunks: input.chunks
         ? {
@@ -120,9 +128,9 @@ async function createDocumentWithChunks(
               content: chunk.content,
               chunkIndex: chunk.chunkIndex,
               embedding: chunk.embedding,
-              status: chunk.status,
-              startIndex: chunk.startIndex,
-              endIndex: chunk.endIndex,
+              chunkStatus: chunk.chunkStatus ?? "active",
+              charStart: chunk.startIndex ?? 0,
+              charEnd: chunk.endIndex ?? chunk.content.length,
             })),
           }
         : undefined,
@@ -182,6 +190,16 @@ export async function createKnowledgeBaseService(
           },
         },
       });
+
+      if (documentIds.length > 0) {
+        await tx.documentSource.updateMany({
+          where: {
+            id: { in: documentIds },
+            knowledgeBaseId: null,
+          },
+          data: { knowledgeBaseId: item.id },
+        });
+      }
 
       return mapKnowledgeBaseTree(item);
     });
@@ -305,6 +323,13 @@ export async function bindDocumentsToKnowledgeBaseService(
           documentId,
           sortOrder: baseSortOrder + index,
         })),
+      });
+      await tx.documentSource.updateMany({
+        where: {
+          id: { in: nextDocumentIds },
+          knowledgeBaseId: null,
+        },
+        data: { knowledgeBaseId },
       });
     }
   });

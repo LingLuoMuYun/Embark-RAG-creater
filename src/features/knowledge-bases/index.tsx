@@ -66,6 +66,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store";
 import {
@@ -150,6 +151,7 @@ function getStatusText(status: RagListItem["status"]) {
 }
 
 export function RagManage() {
+  const router = useRouter();
   const didHydrate = useRef(false);
   const items = useAppStore((state) => state.items);
   const loading = useAppStore((state) => state.loading);
@@ -536,12 +538,12 @@ export function RagManage() {
               className="cursor-pointer border-slate-200 bg-white shadow-sm transition duration-200 hover:scale-[1.01] hover:border-slate-300 hover:shadow-md"
               role="button"
               tabIndex={0}
-              onClick={() => openDocumentsDialog(item)}
+              onClick={() => router.push(`/knowledge-bases/${item.id}`)}
               onKeyDown={(event) => {
                 if (event.currentTarget !== event.target) return;
 
                 if (event.key === "Enter") {
-                  openDocumentsDialog(item);
+                  router.push(`/knowledge-bases/${item.id}`);
                 }
               }}
             >

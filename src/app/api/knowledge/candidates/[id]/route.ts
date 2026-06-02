@@ -50,8 +50,8 @@ export async function PATCH(
         content: result.content,
         suggestedCategory: result.suggestedCategory,
         suggestedTags: JSON.parse(result.suggestedTags || "[]"),
-        type: result.type,
-        status: result.status,
+        type: result.knowledgeType || result.chunkType,
+        status: result.reviewStatus ?? result.chunkStatus,
       },
       message: "更新成功",
     });

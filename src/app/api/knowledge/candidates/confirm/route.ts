@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const count = await confirmCandidates(parsed.data.ids);
+    const count = await confirmCandidates(parsed.data.ids, parsed.data.knowledgeBaseIds);
 
     return NextResponse.json({
       success: true,

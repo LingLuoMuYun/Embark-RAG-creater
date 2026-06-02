@@ -313,6 +313,17 @@ export function normalizeRagDoc(input: unknown): RagDoc {
       typeof item.uploadedAt === "string" && item.uploadedAt.trim()
         ? item.uploadedAt
         : "--",
+    sourceType:
+      typeof item.sourceType === "string" ? item.sourceType : undefined,
+    fileType:
+      typeof item.fileType === "string" ? item.fileType : undefined,
+    rawContent:
+      typeof item.rawContent === "string" ? item.rawContent : undefined,
+    status:
+      typeof item.status === "string" ? item.status : undefined,
+    chunks: Array.isArray(item.chunks)
+      ? item.chunks.map(normalizeRagChunk)
+      : undefined,
   };
 }
 
@@ -337,5 +348,17 @@ export function normalizeRagChunk(input: unknown): RagChunk {
       typeof item.createdAt === "string" && item.createdAt.trim()
         ? item.createdAt
         : "--",
+    chunkType:
+      typeof item.chunkType === "string" ? item.chunkType : undefined,
+    title:
+      typeof item.title === "string" ? item.title : undefined,
+    suggestedCategory:
+      typeof item.suggestedCategory === "string" ? item.suggestedCategory : undefined,
+    suggestedTags:
+      typeof item.suggestedTags === "string" ? item.suggestedTags : undefined,
+    knowledgeType:
+      typeof item.knowledgeType === "string" ? item.knowledgeType : undefined,
+    reviewStatus:
+      typeof item.reviewStatus === "string" ? item.reviewStatus : undefined,
   };
 }

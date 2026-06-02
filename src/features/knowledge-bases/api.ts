@@ -16,7 +16,7 @@ async function readApiData<T>(response: Response): Promise<T> {
 
 // 获取知识库列表，用于 RAG 管理页初始化和刷新列表。
 export async function fetchRagItems() {
-  const response = await fetch("/api/knowledge-bases", {
+  const response = await fetch("/api/rag-management/knowledge-bases", {
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -32,7 +32,7 @@ export async function fetchRagItems() {
 
 // 创建知识库，payload 由调用方按后端 schema 组装。
 export async function createKnowledgeBase(payload: unknown) {
-  const response = await fetch("/api/knowledge-bases", {
+  const response = await fetch("/api/rag-management/knowledge-bases", {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -50,12 +50,15 @@ export async function createKnowledgeBase(payload: unknown) {
 
 // 获取单个知识库详情树，包含关联文档和知识分片。
 export async function fetchRagDetail(id: string) {
-  const response = await fetch(`/api/knowledge-bases/${id}/tree`, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const response = await fetch(
+    `/api/rag-management/knowledge-bases/${id}/tree`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -68,7 +71,7 @@ export async function fetchRagDetail(id: string) {
 
 // 更新指定知识库的基础信息、检索参数或启用状态。
 export async function updateKnowledgeBase(id: string, payload: unknown) {
-  const response = await fetch(`/api/knowledge-bases/${id}`, {
+  const response = await fetch(`/api/rag-management/knowledge-bases/${id}`, {
     method: "PATCH",
     headers: {
       Accept: "application/json",
@@ -86,7 +89,7 @@ export async function updateKnowledgeBase(id: string, payload: unknown) {
 
 // 删除指定知识库，并返回后端删除操作结果。
 export async function deleteKnowledgeBase(id: string) {
-  const response = await fetch(`/api/knowledge-bases/${id}`, {
+  const response = await fetch(`/api/rag-management/knowledge-bases/${id}`, {
     method: "DELETE",
     headers: {
       Accept: "application/json",
@@ -102,7 +105,7 @@ export async function deleteKnowledgeBase(id: string) {
 
 // 创建知识文档，并可同时提交解析后的文本分片。
 export async function createKnowledgeDocument(payload: unknown) {
-  const response = await fetch("/api/documents", {
+  const response = await fetch("/api/rag-management/documents", {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -120,7 +123,7 @@ export async function createKnowledgeDocument(payload: unknown) {
 
 // 删除指定知识文档，后端负责清理关联关系和分片。
 export async function deleteKnowledgeDocument(id: string) {
-  const response = await fetch(`/api/documents/${id}`, {
+  const response = await fetch(`/api/rag-management/documents/${id}`, {
     method: "DELETE",
     headers: {
       Accept: "application/json",
@@ -136,12 +139,15 @@ export async function deleteKnowledgeDocument(id: string) {
 
 // 获取指定文档下的知识分片列表。
 export async function fetchDocumentChunks(params: { documentId: string }) {
-  const response = await fetch(`/api/documents/${params.documentId}/chunks`, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const response = await fetch(
+    `/api/rag-management/documents/${params.documentId}/chunks`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }
+  );
 
   if (!response.ok) {
     throw new Error(`Failed to fetch document chunks: ${response.status}`);

@@ -22,7 +22,7 @@ export async function POST(
       success: true,
       data: {
         id,
-        content: result.content,
+        content: result.rawContent,
         chunkCount: result.chunkCount,
       },
     });

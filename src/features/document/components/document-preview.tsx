@@ -15,7 +15,7 @@ interface CandidateItem {
 interface DocInfo {
   id: string;
   originalName: string;
-  content: string | null;
+  rawContent: string | null;
   status: string;
 }
 
@@ -68,7 +68,7 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
       const docData = await docRes.json();
       if (docData.success) {
         setDocInfo(docData.data);
-        setEditText(docData.data.content || "");
+        setEditText(docData.data.rawContent || "");
       }
       const candData = await candRes.json();
       if (candData.success) {
@@ -209,7 +209,7 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
           ) : tab === "text" ? (
             /* ── 原文内容 ── */
             <div className="space-y-4">
-              {docInfo?.content ? (
+              {docInfo?.rawContent ? (
                 <>
                   <textarea
                     value={editText}
@@ -220,7 +220,7 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
                   <div className="flex justify-end">
                     <button
                       onClick={handleSaveText}
-                      disabled={editText === (docInfo?.content || "") || editTextSaving}
+                      disabled={editText === (docInfo?.rawContent || "") || editTextSaving}
                       className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                     >
                       {editTextSaving ? "保存中..." : "保存修改"}

@@ -6,6 +6,7 @@ generator client {
 datasource db {
   provider = "sqlite"
 }
+
 model KnowledgeBase {
   id          String  @id @default(cuid())
   name        String  @unique
@@ -13,6 +14,11 @@ model KnowledgeBase {
 
   icon  String @default("Database")
   color String @default("blue")
+
+  // Compatibility fields used by main branch UI/API. New RAG management stores
+  // chunk settings on DocumentSource.
+  chunkSize    Int @default(800)
+  chunkOverlap Int @default(100)
 
   similarityThreshold Float @default(0.7)
   topK                Int   @default(5)
@@ -26,35 +32,64 @@ model KnowledgeBase {
 
   @@index([status])
 }
-model KnowledgeDocument {
-  id    String @id @default(cuid())
-  title String
 
-  sourceType String @default("manual")
+// DocumentSource is the unified document model, absorbing KnowledgeDocument.
+// It serves both the document import pipeline (upload → parse → extract) and
+// the RAG knowledge management pipeline (create → chunk → embed → retrieve).
+model DocumentSource {
+  id           String @id @default(cuid())
+  originalName String
+  title        String
 
+  // File metadata
+  fileType String
   fileName String?
   fileUrl  String?
   mimeType String?
-  fileSize Int?
+  fileSize Int
 
+  // Source tracking — origin of the document
+  sourceType String @default("manual") // manual | file | url | text | markdown | image
+
+  // Content
   rawContent String?
 
+  // Chunking configuration
   chunkSize    Int @default(800)
   chunkOverlap Int @default(100)
 
-  parseStatus String @default("pending")
-  status      String @default("active")
-  error       String?
+  // Processing pipeline status
+  //   uploading | uploaded | pending | parsing | parsed | failed
+  //   - uploading: file is being saved to disk
+  //   - uploaded:  file saved, ready for parse
+  //   - pending:   document created, awaiting content processing
+  //   - parsing:   currently being processed
+  //   - parsed:    content extracted and chunked
+  //   - failed:    processing failed
+  status String @default("uploading")
+
+  // Business operational status
+  activeStatus String @default("active") // active | disabled
+
+  // Error tracking
+  error String?
+
+  // Denormalized chunk count for quick display
+  chunkCount Int @default(0)
+
+  // Legacy compatibility scalar — the canonical relation is KnowledgeBaseDocument
+  knowledgeBaseId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   knowledgeBases KnowledgeBaseDocument[]
-  chunks         KnowledgeChunk[]
+  chunks         DocumentChunk[]
 
+  @@index([knowledgeBaseId])
   @@index([sourceType])
-  @@index([parseStatus])
   @@index([status])
+  @@index([activeStatus])
 }
 
 model KnowledgeBaseDocument {
@@ -68,8 +103,8 @@ model KnowledgeBaseDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase  @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document      DocumentSource @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([knowledgeBaseId, documentId])
   @@index([knowledgeBaseId])
@@ -77,73 +112,189 @@ model KnowledgeBaseDocument {
   @@index([status])
 }
 
-
-model KnowledgeChunk {
-  id         String @id @default(cuid())
-  documentId String
+// DocumentChunk is the unified chunk model, absorbing KnowledgeChunk.
+// It includes embedding support for RAG retrieval and can hold both raw text
+// chunks (chunkType="text") and AI-extracted knowledge chunks (chunkType="knowledge").
+model DocumentChunk {
+  id               String @id @default(cuid())
+  documentSourceId String?
 
   content    String
   chunkIndex Int
 
+  // Character-level position in source document
+  charStart Int
+  charEnd   Int
+
+  // Embedding support (from KnowledgeChunk)
   embedding String?
 
-  status String @default("active")
+  // Chunk type: "text" = mechanical split, "knowledge" = AI extracted
+  chunkType String @default("text")
 
-  startIndex Int?
-  endIndex   Int?
+  // === Fields for knowledge-type chunks (absorbed from CandidateKnowledge) ===
+  title             String?  // AI extracted knowledge title
+  suggestedCategory String?  // AI suggested category name
+  suggestedTags     String?  // AI suggested tags (JSON array string)
+  knowledgeType     String?  // AI knowledge subtype: faq | concept | procedure | note | summary
+  reviewStatus      String?  // null(text) | "pending" | "confirmed" | "rejected" (knowledge)
+
+  // Operational status for RAG filtering
+  chunkStatus String @default("active") // active | disabled
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
-  @@index([documentId])
-  @@index([status])
-  @@index([documentId, status])
-}
-
-model DocumentSource {
-  id           String          @id @default(cuid())
-  originalName String
-  fileType     String
-  fileSize     Int
-  status       String          @default("uploading")
-  content      String?
-  errorMessage String?
-  chunkCount   Int             @default(0)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  chunks       DocumentChunk[]
-
-  @@index([status])
-}
-
-model DocumentChunk {
-  id               String         @id @default(cuid())
-  documentSourceId String
-  chunkIndex       Int
-  content          String
-  charStart        Int
-  charEnd          Int
-  createdAt        DateTime       @default(now())
-  documentSource   DocumentSource @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
+  documentSource DocumentSource? @relation(fields: [documentSourceId], references: [id], onDelete: SetNull)
 
   @@index([documentSourceId])
+  @@index([chunkStatus])
+  @@index([chunkType])
+  @@index([reviewStatus])
+  @@index([documentSourceId, chunkStatus])
   @@index([documentSourceId, chunkIndex])
 }
 
-model CandidateKnowledge {
-  id                String   @id @default(cuid())
-  documentSourceId  String?
-  title             String
-  content           String
-  suggestedCategory String?
-  suggestedTags     String?
-  type              String   @default("concept")
-  status            String   @default("pending")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+model ChunkEmbedding {
+  chunkId        String @id
+  embedding      String
+  embeddingModel String
+  contentHash    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([embeddingModel])
+  @@index([contentHash])
+  @@index([updatedAt])
+}
+
+model KnowledgeCategory {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  color       String?
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([createdAt])
+}
+
+model KnowledgeTag {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  color     String?
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@index([createdAt])
+}
+
+model ExpertAgent {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+
+  answerStyle    String @default("strict")
+  knowledgeScope String @default("{}")
+
+  showReferences        Boolean @default(true)
+  allowKnowledgeCapture Boolean @default(false)
+
+  status       String  @default("draft")
+  systemPrompt String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversations AgentConversation[]
 
   @@index([status])
-  @@index([documentSourceId])
+  @@index([answerStyle])
+  @@index([createdAt])
+}
+
+model AgentConversation {
+  id                    String  @id @default(cuid())
+  agentId               String
+  title                 String
+  memorySummary         String?
+  memoryCursorMessageId String?
+  memoryFailureCount    Int     @default(0)
+  status                String  @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent    ExpertAgent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  messages AgentMessage[]
+
+  @@index([agentId])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model AgentMessage {
+  id             String  @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  citationsJson  String?
+
+  createdAt DateTime @default(now())
+
+  conversation AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+model UsageLog {
+  id String @id @default(cuid())
+
+  source String @default("rag_retrieve")
+  query  String
+  mode   String @default("balanced")
+  scope  String
+
+  hitCount Int     @default(0)
+  noHit    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  references UsageReference[]
+
+  @@index([source])
+  @@index([noHit])
+  @@index([query])
+  @@index([createdAt])
+}
+
+model UsageReference {
+  id         String @id @default(cuid())
+  usageLogId String
+
+  knowledgeBaseId String
+  knowledgeId     String
+  chunkId         String
+  title           String
+  chunkType       String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usageLog UsageLog @relation(fields: [usageLogId], references: [id], onDelete: Cascade)
+
+  @@index([usageLogId])
+  @@index([knowledgeBaseId])
+  @@index([knowledgeId])
+  @@index([chunkId])
+  @@index([chunkType])
 }

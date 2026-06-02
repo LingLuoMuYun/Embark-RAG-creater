@@ -2,6 +2,7 @@ import {
   Bot,
   BrainCircuit,
   FolderKanban,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -13,6 +14,12 @@ export type AdminNavItem = {
 };
 
 export const adminNavItems = [
+  {
+    label: "数据总览",
+    title: "Dashboard 数据总览",
+    href: "/dashboard",
+    Icon: LayoutDashboard,
+  },
   {
     label: "知识库",
     title: "知识库管理",

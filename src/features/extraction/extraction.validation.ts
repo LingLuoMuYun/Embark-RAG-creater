@@ -44,4 +44,5 @@ export const UpdateCandidateSchema = z.object({
 /** POST /api/knowledge/candidates/confirm 请求体 */
 export const ConfirmRequestSchema = z.object({
   ids: z.array(z.string()).min(1, "至少选择一条"),
+  knowledgeBaseIds: z.array(z.string()).min(1, "至少选择一个知识库"),
 });
