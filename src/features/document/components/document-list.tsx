@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface DocumentItem {
   id: string;
@@ -9,6 +10,8 @@ interface DocumentItem {
   fileSize: number;
   status: string;
   chunkCount: number;
+  candidatePending: number;
+  candidateConfirmed: number;
   createdAt: string;
 }
 
@@ -39,6 +42,7 @@ const FILTER_OPTIONS = [
   { key: "uploaded", label: "待解析" },
   { key: "parsing", label: "解析中" },
   { key: "parsed", label: "已解析" },
+  { key: "extracted", label: "已提炼" },
   { key: "failed", label: "失败" },
 ];
 
@@ -53,23 +57,49 @@ interface DocumentListProps {
 }
 
 export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListProps) {
+  const router = useRouter();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pageSize = 10;
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [extractingId, setExtractingId] = useState<string | null>(null);
+  const [extractMsg, setExtractMsg] = useState<string | null>(null);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
-  const fetchDocuments = async (statusFilter?: string) => {
-    setLoading(true);
+  const someSelected = selected.size > 0 && selected.size < documents.length;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelected;
+    }
+  }, [someSelected]);
+
+  const hasLoadedRef = useRef(false);
+
+  const fetchDocuments = useCallback(async () => {
     setError(null);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
-      const url = statusFilter
-        ? `/api/documents?status=${statusFilter}`
-        : "/api/documents";
-      const res = await fetch(url);
+      const params = new URLSearchParams();
+      if (filter === "extracted") {
+        params.set("hasCandidates", "true");
+      } else if (filter) {
+        params.set("status", filter);
+      }
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      const res = await fetch(`/api/documents?${params.toString()}`);
       const json = await res.json();
       if (json.success) {
         setDocuments(json.data.items);
+        setTotal(json.data.total);
+        setSelected(new Set());
+        hasLoadedRef.current = true;
       } else {
         throw new Error(json.error?.message || "加载失败");
       }
@@ -78,12 +108,18 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, page]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard data fetching on mount/filter change
-    fetchDocuments(filter);
-  }, [refreshKey, filter]);
+    fetchDocuments();
+  }, [fetchDocuments, refreshKey]);
+
+  useEffect(() => {
+    if (extractMsg) {
+      const timer = setTimeout(() => setExtractMsg(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [extractMsg]);
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`确定删除「${name}」？`)) return;
@@ -91,7 +127,11 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
       const json = await res.json();
       if (json.success) {
-        setDocuments((prev) => prev.filter((d) => d.id !== id));
+        setDocuments((prev) => {
+          const next = prev.filter((d) => d.id !== id);
+          if (next.length === 0 && page > 1) setPage(page - 1);
+          return next;
+        });
         setSelected((prev) => { prev.delete(id); return new Set(prev); });
       }
     } catch { /* ignore */ }
@@ -115,6 +155,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
     });
   };
 
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const selectedList = Array.from(selected);
   const parseIds = selectedList.filter((id) => {
     const doc = documents.find((d) => d.id === id);
@@ -122,23 +163,55 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
   });
 
   const handleBatchDelete = async () => {
-    if (selectedList.length === 0) return;
+    if (selectedList.length === 0 || batchDeleting) return;
     if (!confirm(`确定删除选中的 ${selectedList.length} 个文档？`)) return;
-    await fetch("/api/documents/batch-delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: selectedList }),
-    });
-    setSelected(new Set());
-    fetchDocuments(filter);
+    setBatchDeleting(true);
+    try {
+      const res = await fetch("/api/documents/batch-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedList }),
+      });
+      const json = await res.json();
+      if (!json.success) return;
+      setSelected(new Set());
+      if (selectedList.length === documents.length && page > 1) {
+        setPage(page - 1);
+      } else {
+        fetchDocuments();
+      }
+    } catch { /* ignore */ } finally { setBatchDeleting(false); }
   };
+
+  async function handleExtract(id: string) {
+    setExtractingId(id);
+    setExtractMsg(null);
+    try {
+      const res = await fetch("/api/ai/extract/from-document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId: id }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setExtractMsg(`提炼完成！生成 ${json.data.dedupedCandidateCount} 条候选知识`);
+        fetchDocuments();
+      } else {
+        setExtractMsg(json.error?.message || "提炼失败");
+      }
+    } catch {
+      setExtractMsg("网络错误，请重试");
+    } finally {
+      setExtractingId(null);
+    }
+  }
 
   const filterBar = (
     <div className="mb-3 flex flex-wrap items-center gap-1">
       {FILTER_OPTIONS.map((opt) => (
         <button
           key={opt.key}
-          onClick={() => { setFilter(opt.key); setSelected(new Set()); }}
+          onClick={() => { setFilter(opt.key); setPage(1); setSelected(new Set()); }}
           className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
             filter === opt.key
               ? "bg-blue-600 text-white"
@@ -151,8 +224,9 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       <div className="ml-auto flex items-center gap-2">
         {parseIds.length > 0 && (
           <button
-            onClick={() => { onParse(parseIds); setSelected(new Set()); }}
-            className="rounded px-3 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700"
+            onClick={() => { onParse(parseIds); }}
+            disabled={batchDeleting}
+            className="rounded px-3 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >
             批量解析（{parseIds.length}）
           </button>
@@ -160,9 +234,10 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
         {selectedList.length > 0 && (
           <button
             onClick={handleBatchDelete}
-            className="rounded px-3 py-1 text-xs font-medium bg-red-500 text-white hover:bg-red-600"
+            disabled={batchDeleting}
+            className="rounded px-3 py-1 text-xs font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
           >
-            批量删除（{selectedList.length}）
+            {batchDeleting ? "删除中..." : `批量删除（${selectedList.length}）`}
           </button>
         )}
       </div>
@@ -181,7 +256,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       ) : error ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
           {error}
-          <button onClick={() => fetchDocuments(filter)} className="ml-2 underline">重试</button>
+          <button onClick={() => fetchDocuments()} className="ml-2 underline">重试</button>
         </div>
       ) : documents.length === 0 ? (
         <div className="py-16 text-center text-sm text-zinc-400">
@@ -193,12 +268,19 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase text-zinc-500">
                 <th className="w-10 px-3 py-3">
-                  <input type="checkbox" onChange={toggleAll} className="h-3.5 w-3.5 rounded" />
+                  <input
+                    type="checkbox"
+                    ref={selectAllRef}
+                    checked={documents.length > 0 && selected.size === documents.length}
+                    onChange={toggleAll}
+                    className="h-3.5 w-3.5 rounded"
+                  />
                 </th>
                 <th className="px-4 py-3">文件名</th>
                 <th className="px-4 py-3">类型</th>
                 <th className="px-4 py-3">大小</th>
                 <th className="px-4 py-3">分段</th>
+                <th className="px-4 py-3">AI知识</th>
                 <th className="px-4 py-3">状态</th>
                 <th className="px-4 py-3">上传时间</th>
                 <th className="px-4 py-3">操作</th>
@@ -207,6 +289,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
             <tbody className="divide-y divide-zinc-100">
               {documents.map((doc) => {
                 const statusDisplay = getStatusDisplay(doc.status);
+                const hasCandidates = doc.candidatePending > 0 || doc.candidateConfirmed > 0;
                 return (
                   <tr key={doc.id} className="hover:bg-zinc-50">
                     <td className="px-3 py-3">
@@ -214,35 +297,105 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                         type="checkbox"
                         checked={selected.has(doc.id)}
                         onChange={() => toggleSelect(doc.id)}
-                        className="h-3.5 w-3.5 rounded"
+                        className="h-3.5 w-3.5 rounded border-zinc-300"
                       />
                     </td>
-                    <td className="max-w-[200px] truncate px-4 py-3 font-medium text-zinc-900">
+                    <td className="max-w-[180px] truncate px-4 py-3 font-medium text-zinc-900">
                       {doc.originalName}
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">.{doc.fileType}</td>
-                    <td className="px-4 py-3 text-zinc-500">{formatFileSize(doc.fileSize)}</td>
                     <td className="px-4 py-3 text-zinc-500">
-                      {doc.status === "parsed" && doc.chunkCount > 0 ? `${doc.chunkCount} 段` : doc.status === "parsing" ? "..." : "-"}
+                      .{doc.fileType}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500">
+                      {formatFileSize(doc.fileSize)}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500">
+                      {doc.status === "parsed" && doc.chunkCount > 0
+                        ? `${doc.chunkCount} 段`
+                        : doc.status === "parsing"
+                          ? "..."
+                          : "-"}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${statusDisplay.color}`}>
+                      {hasCandidates ? (
+                        <div className="flex items-center gap-1.5">
+                          {doc.candidatePending > 0 && (
+                            <button
+                              onClick={() => router.push("/candidates")}
+                              className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium"
+                            >
+                              {doc.candidatePending} 待审核
+                            </button>
+                          )}
+                          {doc.candidateConfirmed > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">
+                              {doc.candidateConfirmed} 已入库
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-zinc-400">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${statusDisplay.color}`}
+                      >
                         {statusDisplay.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-500">{formatDate(doc.createdAt)}</td>
+                    <td className="px-4 py-3 text-zinc-500">
+                      {formatDate(doc.createdAt)}
+                    </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         {doc.status === "uploaded" && (
-                          <button onClick={() => onParse([doc.id])} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">解析</button>
+                          <button
+                            onClick={() => onParse([doc.id])}
+                            className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                          >
+                            解析
+                          </button>
                         )}
                         {doc.status === "parsed" && (
-                          <button onClick={() => onPreview(doc.id)} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">预览</button>
+                          <>
+                            <button
+                              onClick={() => onPreview(doc.id)}
+                              className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50"
+                            >
+                              预览
+                            </button>
+                            <button
+                              onClick={() => handleExtract(doc.id)}
+                              disabled={extractingId === doc.id}
+                              className="rounded px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 disabled:opacity-50"
+                            >
+                              {extractingId === doc.id ? "提炼中..." : "提炼"}
+                            </button>
+                            {doc.candidatePending > 0 && (
+                              <button
+                                onClick={() => router.push("/candidates")}
+                                className="rounded px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-50"
+                              >
+                                审核
+                              </button>
+                            )}
+                          </>
                         )}
                         {doc.status === "failed" && (
-                          <button onClick={() => onParse([doc.id])} className="rounded px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50">重解</button>
+                          <button
+                            onClick={() => onParse([doc.id])}
+                            className="rounded px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50"
+                          >
+                            重新解析
+                          </button>
                         )}
-                        <button onClick={() => handleDelete(doc.id, doc.originalName)} className="rounded px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50">删除</button>
+                        <button
+                          onClick={() => handleDelete(doc.id, doc.originalName)}
+                          className="rounded px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-50"
+                        >
+                          删除
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -250,6 +403,48 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
               })}
             </tbody>
           </table>
+
+          {/* 分页 */}
+          <div className="flex items-center justify-between border-t border-zinc-200 px-4 py-3">
+            <span className="text-xs text-zinc-500">
+              共 {total} 条记录，第 {page}/{totalPages} 页
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="rounded px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                上一页
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="rounded px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+
+          {/* 提炼结果提示 */}
+          {extractMsg && (
+            <div className={`border-t px-4 py-3 text-sm ${
+              extractMsg.includes("完成")
+                ? "bg-green-50 text-green-700"
+                : "bg-red-50 text-red-600"
+            }`}>
+              {extractMsg}
+              {extractMsg.includes("完成") && (
+                <button
+                  onClick={() => router.push("/candidates")}
+                  className="ml-3 font-medium underline"
+                >
+                  前往审核
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

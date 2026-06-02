@@ -159,7 +159,6 @@ model KnowledgeTag {
   @@index([sortOrder])
   @@index([createdAt])
 }
-
 model DocumentSource {
   id           String   @id @default(cuid())
   originalName String
@@ -191,6 +190,22 @@ model DocumentChunk {
 
   @@index([documentSourceId])
   @@index([documentSourceId, chunkIndex])
+}
+
+model CandidateKnowledge {
+  id                String   @id @default(cuid())
+  documentSourceId  String?  // 来源文档 ID（关联 DocumentSource，可选）
+  title             String   // AI 提炼的知识标题
+  content           String   // AI 提炼的知识正文
+  suggestedCategory String?  // AI 建议的分类名称（纯文本）
+  suggestedTags     String?  // AI 建议的标签列表（JSON 数组字符串）
+  type              String   @default("concept") // faq | concept | procedure | note | summary
+  status            String   @default("pending") // pending | confirmed | rejected
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([documentSourceId])
 }
 
 model ExpertAgent {
