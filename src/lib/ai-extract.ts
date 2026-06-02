@@ -1,6 +1,6 @@
 import {
-  CandidateKnowledgeSchema,
-  type CandidateKnowledgeItem,
+  ExtractedChunksSchema,
+  type ExtractedChunk,
 } from "@/features/extraction/extraction.validation";
 import {
   EXTRACTION_SYSTEM_PROMPT,
@@ -11,7 +11,7 @@ import {
 
 export interface ExtractResult {
   success: boolean;
-  candidates?: CandidateKnowledgeItem[];
+  candidates?: ExtractedChunk[];
   error?: string;
   retryable?: boolean;
 }
@@ -217,7 +217,7 @@ export async function extractKnowledge(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const rawResult = await callLLM(text);
-      const parsed = CandidateKnowledgeSchema.parse(rawResult);
+      const parsed = ExtractedChunksSchema.parse(rawResult);
 
       if (parsed.length === 0) {
         return {
@@ -260,11 +260,14 @@ function titleSimilar(a: string, b: string): boolean {
 
 /** 按 title 相似度去重 */
 export function deduplicateCandidates(
-  candidates: CandidateKnowledgeItem[]
-): CandidateKnowledgeItem[] {
-  const kept: CandidateKnowledgeItem[] = [];
+  candidates: ExtractedChunk[]
+): ExtractedChunk[] {
+  const kept: ExtractedChunk[] = [];
   for (const c of candidates) {
-    const isDuplicate = kept.some((k) => titleSimilar(k.title, c.title));
+    const currentTitle = c.title ?? c.content.slice(0, 80);
+    const isDuplicate = kept.some((k) =>
+      titleSimilar(k.title ?? k.content.slice(0, 80), currentTitle)
+    );
     if (!isDuplicate) kept.push(c);
   }
   return kept;

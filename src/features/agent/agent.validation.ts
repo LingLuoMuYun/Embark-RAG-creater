@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   AGENT_CHUNK_TYPES,
   AGENT_KNOWLEDGE_SCOPE_MODES,
+  type AgentChunkType,
   type AgentKnowledgeScope,
   type RagRetrieveScope,
 } from "./agent.types";
@@ -12,7 +13,9 @@ const idListSchema = z
   .default([])
   .transform((values) => Array.from(new Set(values)));
 
-export const agentChunkTypeSchema = z.enum(AGENT_CHUNK_TYPES);
+export const agentChunkTypeSchema = z
+  .enum([...AGENT_CHUNK_TYPES, "text", "wiki", "qa"] as const)
+  .transform(normalizeAgentChunkType);
 
 export const agentKnowledgeScopeSchema = z.object({
   mode: z.enum(AGENT_KNOWLEDGE_SCOPE_MODES).default("all"),
@@ -29,9 +32,9 @@ export const agentKnowledgeScopeSchema = z.object({
 export const ragRetrieveScopeSchema = z.object({
   knowledgeBaseIds: z.array(z.string().trim().min(1)).min(1),
   knowledgeIds: z.array(z.string().trim().min(1)).optional(),
-  categoryIds: z.array(z.string().trim().min(1)).optional(),
-  tagIds: z.array(z.string().trim().min(1)).optional(),
-  chunkTypes: z.array(agentChunkTypeSchema).optional(),
+  categories: z.array(z.string().trim().min(1)).optional(),
+  tagIds: z.array(z.string().min(1)).optional(),
+  types: z.array(z.enum(AGENT_CHUNK_TYPES)).optional(),
 });
 
 export const agentIdSchema = z.object({
@@ -87,9 +90,7 @@ export const DEFAULT_AGENT_KNOWLEDGE_SCOPE: AgentKnowledgeScope = {
   chunkTypes: [],
 };
 
-export function parseAgentKnowledgeScope(
-  value: unknown
-): AgentKnowledgeScope {
+export function parseAgentKnowledgeScope(value: unknown): AgentKnowledgeScope {
   const rawValue =
     typeof value === "string" && value.trim().length > 0
       ? safeJsonParse(value)
@@ -117,13 +118,13 @@ export function toRagRetrieveScope(
     ragScope.knowledgeIds = normalized.knowledgeIds;
   }
   if (normalized.categoryIds.length > 0) {
-    ragScope.categoryIds = normalized.categoryIds;
+    ragScope.categories = normalized.categoryIds;
   }
   if (normalized.tagIds.length > 0) {
     ragScope.tagIds = normalized.tagIds;
   }
   if (normalized.chunkTypes.length > 0) {
-    ragScope.chunkTypes = normalized.chunkTypes;
+    ragScope.types = normalized.chunkTypes;
   }
 
   return ragRetrieveScopeSchema.parse(ragScope);
@@ -148,16 +149,23 @@ function toOptionalRagRetrieveScope(
     ragScope.knowledgeIds = normalized.knowledgeIds;
   }
   if (normalized.categoryIds.length > 0) {
-    ragScope.categoryIds = normalized.categoryIds;
+    ragScope.categories = normalized.categoryIds;
   }
   if (normalized.tagIds.length > 0) {
     ragScope.tagIds = normalized.tagIds;
   }
   if (normalized.chunkTypes.length > 0) {
-    ragScope.chunkTypes = normalized.chunkTypes;
+    ragScope.types = normalized.chunkTypes;
   }
 
   return ragScope;
+}
+
+function normalizeAgentChunkType(value: string): AgentChunkType {
+  if (value === "qa") return "faq";
+  if (value === "wiki") return "concept";
+  if (value === "text") return "note";
+  return value as AgentChunkType;
 }
 
 function safeJsonParse(value: string): unknown {

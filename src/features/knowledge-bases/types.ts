@@ -27,18 +27,40 @@ export type RagListItem = {
 
 export type RagDoc = {
   id: string;
+  title: string;
   name: string;
+  sourceType: string;
+  fileName?: string | null;
+  fileUrl?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  rawContent?: string | null;
+  parseStatus: string;
+  status: string;
+  error?: string | null;
+  chunkCount: number;
   size: number;
   uploadedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  chunks?: RagChunk[];
 };
 
 export type RagChunk = {
   id: string;
   documentId: string;
   content: string;
+  chunkIndex: number;
+  embedding?: string | null;
+  category?: string | null;
+  type: "faq" | "concept" | "procedure" | "note" | "summary" | string;
+  status: string;
+  startIndex?: number | null;
+  endIndex?: number | null;
   tokenCount?: number;
   charCount?: number;
   createdAt?: string;
+  updatedAt?: string;
 };
 
 export type RagDetail = RagListItem;

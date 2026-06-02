@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { ExtractRequestSchema } from "@/features/extraction/extraction.validation";
-import { extractFromText } from "@/server/services/extraction.service";
-import { prisma } from "@/lib/db";
+import {
+  createAiDocumentFromText,
+  extractFromText,
+} from "@/server/services/extraction.service";
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +25,6 @@ export async function POST(request: NextRequest) {
     }
 
     const { text } = parsed.data;
-
     const result = await extractFromText(text);
 
     if (!result.success) {
@@ -39,30 +41,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 写入候选表
-    if (result.candidates && result.candidates.length > 0) {
-      const rows = result.candidates.map((c) => ({
-        title: c.title,
-        content: c.content,
-        suggestedCategory: c.suggestedCategory || null,
-        suggestedTags: JSON.stringify(c.suggestedTags || []),
-        type: c.type,
-        status: "pending",
-      }));
-      await prisma.candidateKnowledge.createMany({ data: rows });
-    }
+    const extractedChunks = result.candidates ?? [];
+    const saved = await createAiDocumentFromText(text, extractedChunks);
 
     return NextResponse.json({
       success: true,
       data: {
-        candidates: result.candidates,
-        count: result.candidates?.length || 0,
+        documentId: saved.document.id,
+        documentName: saved.document.title,
+        chunks: saved.chunks,
+        count: saved.chunks.length,
       },
-      message: `成功提炼 ${result.candidates?.length || 0} 条候选知识`,
+      message: `成功提炼 ${saved.chunks.length} 条知识分片`,
     });
-  } catch (err: unknown) {
+  } catch (error: unknown) {
     const message =
-      err instanceof Error ? err.message : "服务器内部错误";
+      error instanceof Error ? error.message : "服务器内部错误";
     return NextResponse.json(
       {
         success: false,

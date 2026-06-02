@@ -112,10 +112,11 @@ const SCOPE_MODE_OPTIONS = [
 }>;
 
 const CHUNK_TYPE_LABELS: Record<AgentChunkType, string> = {
-  text: "文本",
-  wiki: "LLM Wiki",
+  faq: "问答",
+  concept: "概念",
+  procedure: "步骤",
+  note: "笔记",
   summary: "摘要",
-  qa: "问答",
 };
 
 const READINESS_COLORS: Record<ReadinessStatus, string> = {

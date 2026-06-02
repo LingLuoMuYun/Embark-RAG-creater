@@ -285,7 +285,7 @@ function scoreField(field: SearchField, queryProfile: QueryProfile): number {
 /** 将分类、标签和 metadata 合并成可参与规则匹配的文本。 */
 function getMetadataText(chunk: KnowledgeChunk): string {
   return [
-    chunk.categoryId ?? "",
+    chunk.category ?? "",
     ...(chunk.tagIds ?? []),
     chunk.metadata ? JSON.stringify(chunk.metadata) : "",
   ].join(" ");
@@ -304,19 +304,19 @@ function getChunkTypeScore(
   intent: QueryIntent
 ): number {
   if (intent === "concept") {
-    return chunkType === "wiki" || chunkType === "summary"
+    return chunkType === "concept" || chunkType === "summary"
       ? RAG_CONFIG.rulesIntentChunkTypeBoost
       : 0;
   }
 
   if (intent === "action") {
-    return chunkType === "text" || chunkType === "qa"
+    return chunkType === "procedure" || chunkType === "faq"
       ? RAG_CONFIG.rulesIntentChunkTypeBoost
       : 0;
   }
 
   if (intent === "permission") {
-    return chunkType === "wiki" || chunkType === "text" || chunkType === "qa"
+    return chunkType === "faq" || chunkType === "procedure"
       ? RAG_CONFIG.rulesIntentChunkTypeBoost
       : RAG_CONFIG.rulesIntentChunkTypeBoost / 2;
   }

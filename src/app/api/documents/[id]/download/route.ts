@@ -54,8 +54,11 @@ export async function GET(
       bmp: "image/bmp",
     };
 
-    const mime = mimeMap[doc.fileType] ?? "application/octet-stream";
-    const encodedName = encodeURIComponent(doc.originalName);
+    const fileType = doc.fileType ?? "";
+    const mime = mimeMap[fileType] ?? "application/octet-stream";
+    const fileName =
+      doc.originalName ?? doc.fileName ?? doc.title ?? `document-${doc.id}`;
+    const encodedName = encodeURIComponent(fileName);
 
     return new NextResponse(new Uint8Array(buffer), {
       headers: {

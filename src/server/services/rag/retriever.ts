@@ -105,10 +105,10 @@ function isChunkInScope(
   if (scope.knowledgeIds && !scope.knowledgeIds.includes(chunk.knowledgeId)) {
     return false;
   }
-  if (scope.categoryIds && !scope.categoryIds.includes(chunk.categoryId ?? "")) {
+  if (scope.categories && !scope.categories.includes(chunk.category ?? "")) {
     return false;
   }
-  if (scope.chunkTypes && !scope.chunkTypes.includes(chunk.chunkType)) {
+  if (scope.types && !scope.types.includes(chunk.chunkType)) {
     return false;
   }
   // tagIds 初版采用“任意标签命中”语义，后续如需“全部命中”要同步修改对接文档。

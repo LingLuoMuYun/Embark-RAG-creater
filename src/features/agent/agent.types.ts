@@ -6,7 +6,13 @@ export const AGENT_KNOWLEDGE_SCOPE_MODES = [
   "knowledgeItems",
 ] as const;
 
-export const AGENT_CHUNK_TYPES = ["text", "wiki", "summary", "qa"] as const;
+export const AGENT_CHUNK_TYPES = [
+  "faq",
+  "concept",
+  "procedure",
+  "note",
+  "summary",
+] as const;
 
 export type AgentKnowledgeScopeMode =
   (typeof AGENT_KNOWLEDGE_SCOPE_MODES)[number];
@@ -25,9 +31,9 @@ export type AgentKnowledgeScope = {
 export type RagRetrieveScope = {
   knowledgeBaseIds: string[];
   knowledgeIds?: string[];
-  categoryIds?: string[];
+  categories?: string[];
   tagIds?: string[];
-  chunkTypes?: AgentChunkType[];
+  types?: AgentChunkType[];
 };
 
 export type RagRetrieveMode = "fast" | "balanced" | "detailed";

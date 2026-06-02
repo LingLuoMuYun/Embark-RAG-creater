@@ -31,8 +31,6 @@ function toReferenceKey(reference: {
 }
 
 function normalizeReferences(input: UsageLogCreateInput) {
-  // Prefer explicit references from B's retrieve response. If a caller only
-  // sends contexts, derive reference records from those contexts for analytics.
   const references =
     input.references.length > 0
       ? input.references
@@ -90,7 +88,6 @@ function normalizeStatusCounts(
 
 export async function createUsageLog(input: UsageLogCreateInput) {
   const references = normalizeReferences(input);
-  // Empty contexts and references mean the user question did not hit knowledge.
   const noHit = input.contexts.length === 0 && references.length === 0;
 
   return prisma.usageLog.create({
@@ -107,6 +104,7 @@ export async function createUsageLog(input: UsageLogCreateInput) {
           knowledgeId: reference.knowledgeId,
           chunkId: reference.chunkId,
           title: reference.title,
+          type: reference.chunkType,
           chunkType: reference.chunkType,
         })),
       },
@@ -140,23 +138,26 @@ export async function getHotKnowledge(limit = 10) {
 }
 
 export async function getRecentKnowledge(limit = 10) {
-  const documents = await prisma.knowledgeDocument.findMany({
+  const documents = await prisma.documentSource.findMany({
     orderBy: { createdAt: "desc" },
     take: limit,
     select: {
       id: true,
-      knowledgeBaseId: true,
       title: true,
       sourceType: true,
       status: true,
       parseStatus: true,
       createdAt: true,
+      knowledgeBases: {
+        take: 1,
+        select: { knowledgeBaseId: true },
+      },
     },
   });
 
   return documents.map((document) => ({
     id: document.id,
-    knowledgeBaseId: document.knowledgeBaseId,
+    knowledgeBaseId: document.knowledgeBases[0]?.knowledgeBaseId ?? null,
     title: document.title,
     sourceType: document.sourceType,
     status: document.status,
@@ -165,34 +166,50 @@ export async function getRecentKnowledge(limit = 10) {
   }));
 }
 
-/**
- * 分类知识数量分布。
- *
- * 当前 KnowledgeDocument 尚未绑定 categoryId（待成员 A 联调），
- * 因此有分类的 count 为 0，全部知识暂时归入「未分类」。
- * A 在知识表增加 categoryId 后，只需更新本函数的计数逻辑即可。
- */
 export async function getCategoryDistribution() {
-  const [categories, totalKnowledge] = await Promise.all([
+  const [categories, chunkGroups, totalChunks] = await Promise.all([
     prisma.knowledgeCategory.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
-    prisma.knowledgeDocument.count(),
+    prisma.documentChunk.groupBy({
+      by: ["category"],
+      where: { category: { not: null } },
+      _count: { category: true },
+    }),
+    prisma.documentChunk.count(),
   ]);
 
+  const countByCategoryName = new Map(
+    chunkGroups.map((group) => [group.category ?? "", group._count.category])
+  );
+  const categorizedCount = Array.from(countByCategoryName.values()).reduce(
+    (sum, count) => sum + count,
+    0
+  );
   const items = categories.map((category) => ({
     categoryId: category.id,
     name: category.name,
     color: category.color,
-    count: 0,
+    count: countByCategoryName.get(category.name) ?? 0,
   }));
 
-  if (totalKnowledge > 0) {
+  for (const [category, count] of countByCategoryName) {
+    if (!items.some((item) => item.name === category)) {
+      items.push({
+        categoryId: category,
+        name: category,
+        color: null,
+        count,
+      });
+    }
+  }
+
+  if (totalChunks - categorizedCount > 0) {
     items.push({
       categoryId: UNCATEGORIZED_CATEGORY_ID,
       name: "未分类",
       color: null,
-      count: totalKnowledge,
+      count: totalChunks - categorizedCount,
     });
   }
 
@@ -232,8 +249,6 @@ export async function getAnalyticsOverview() {
     parsedDocuments,
     documentChunks,
     knowledgeBases,
-    knowledgeDocuments,
-    knowledgeChunks,
     agents,
     activeAgents,
     usageLogs,
@@ -252,8 +267,6 @@ export async function getAnalyticsOverview() {
     prisma.documentSource.count({ where: { status: "parsed" } }),
     prisma.documentChunk.count(),
     prisma.knowledgeBase.count(),
-    prisma.knowledgeDocument.count(),
-    prisma.knowledgeChunk.count(),
     prisma.expertAgent.count(),
     prisma.expertAgent.count({ where: { status: "active" } }),
     prisma.usageLog.count(),
@@ -273,6 +286,7 @@ export async function getAnalyticsOverview() {
       take: RECENT_DOCUMENT_LIMIT,
       select: {
         id: true,
+        title: true,
         originalName: true,
         fileType: true,
         status: true,
@@ -292,7 +306,7 @@ export async function getAnalyticsOverview() {
     }),
     getHotKnowledge(5),
     getKnowledgeGaps(5),
-    prisma.knowledgeDocument.count({ where: { status: "pending" } }),
+    prisma.documentSource.count({ where: { status: "pending" } }),
     getRecentKnowledge(RECENT_KNOWLEDGE_LIMIT),
     getCategoryDistribution(),
   ]);
@@ -303,8 +317,8 @@ export async function getAnalyticsOverview() {
       parsedDocuments,
       documentChunks,
       knowledgeBases,
-      knowledgeDocuments,
-      knowledgeChunks,
+      knowledgeDocuments: totalDocuments,
+      knowledgeChunks: documentChunks,
       agents,
       activeAgents,
       usageLogs,
@@ -317,6 +331,8 @@ export async function getAnalyticsOverview() {
     },
     recentDocuments: recentDocuments.map((document) => ({
       ...document,
+      originalName: document.originalName ?? document.title,
+      fileType: document.fileType ?? "unknown",
       createdAt: document.createdAt.toISOString(),
     })),
     documentActivity: buildActivityDays(activityDocuments),

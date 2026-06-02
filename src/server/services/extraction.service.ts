@@ -4,27 +4,24 @@ import {
   getDocumentChunks,
 } from "@/server/services/document.service";
 import {
-  extractKnowledge,
   deduplicateCandidates,
+  extractKnowledge,
   type ExtractResult,
 } from "@/lib/ai-extract";
 import { renderChunkUserPrompt } from "@/lib/prompts/extraction";
-import type { CandidateKnowledgeItem } from "@/features/extraction/extraction.validation";
+import type { ExtractedChunk } from "@/features/extraction/extraction.validation";
 
-// ===== 类型 =====
-
-export interface CandidateRow {
+export type ExtractedDocumentChunk = {
   id: string;
-  title: string;
+  documentSourceId: string;
   content: string;
-  suggestedCategory: string | null;
-  suggestedTags: string | null;
+  category: string | null;
   type: string;
   status: string;
-  documentSourceId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+  chunkIndex: number;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export interface ExtractionFromDocumentResult {
   documentId: string;
@@ -32,37 +29,84 @@ export interface ExtractionFromDocumentResult {
   totalChunks: number;
   rawCandidateCount: number;
   dedupedCandidateCount: number;
-  candidates: CandidateRow[];
+  chunks: ExtractedDocumentChunk[];
   errors?: Array<{ chunkIndex: number; error: string }>;
 }
 
-// ===== 辅助函数 =====
+function getChunkCategory(item: ExtractedChunk): string | null {
+  return item.category ?? item.suggestedCategory ?? null;
+}
 
-function toCandidateRow(
-  item: CandidateKnowledgeItem,
-  status = "pending",
-  documentSourceId?: string
-) {
+function toExtractedDocumentChunk(chunk: {
+  id: string;
+  documentSourceId: string;
+  content: string;
+  category: string | null;
+  type: string;
+  status: string;
+  chunkIndex: number;
+  createdAt: Date;
+  updatedAt: Date;
+}): ExtractedDocumentChunk {
   return {
-    title: item.title,
-    content: item.content,
-    suggestedCategory: item.suggestedCategory || null,
-    suggestedTags: JSON.stringify(item.suggestedTags || []),
-    type: item.type,
-    status,
-    ...(documentSourceId ? { documentSourceId } : {}),
+    id: chunk.id,
+    documentSourceId: chunk.documentSourceId,
+    content: chunk.content,
+    category: chunk.category,
+    type: chunk.type,
+    status: chunk.status,
+    chunkIndex: chunk.chunkIndex,
+    createdAt: chunk.createdAt.toISOString(),
+    updatedAt: chunk.updatedAt.toISOString(),
   };
 }
 
-// ===== 从文本提炼 =====
-
-export async function extractFromText(
-  text: string
-): Promise<ExtractResult> {
+export async function extractFromText(text: string): Promise<ExtractResult> {
   return extractKnowledge(text);
 }
 
-// ===== 从文档提炼（对接 C 的解析结果） =====
+export async function createAiDocumentFromText(
+  text: string,
+  extractedChunks: ExtractedChunk[]
+) {
+  return prisma.$transaction(async (tx) => {
+    const document = await tx.documentSource.create({
+      data: {
+        title: "AI 提炼文本",
+        sourceType: "ai",
+        originalName: "AI 提炼文本",
+        content: text,
+        rawContent: text,
+        status: "parsed",
+        parseStatus: "success",
+        chunkCount: extractedChunks.length,
+        chunks:
+          extractedChunks.length > 0
+            ? {
+                create: extractedChunks.map((chunk, index) => ({
+                  chunkIndex: index,
+                  content: chunk.content,
+                  category: getChunkCategory(chunk),
+                  type: chunk.type,
+                  status: "active",
+                  embedding: null,
+                })),
+              }
+            : undefined,
+      },
+      include: {
+        chunks: {
+          orderBy: { chunkIndex: "asc" },
+        },
+      },
+    });
+
+    return {
+      document,
+      chunks: document.chunks.map(toExtractedDocumentChunk),
+    };
+  });
+}
 
 export async function extractFromDocument(
   documentId: string
@@ -71,7 +115,6 @@ export async function extractFromDocument(
   data?: ExtractionFromDocumentResult;
   error?: { code: string; message: string };
 }> {
-  // 1. 获取文档信息并校验状态
   const doc = await getDocumentById(documentId);
   if (!doc) {
     return {
@@ -79,6 +122,7 @@ export async function extractFromDocument(
       error: { code: "NOT_FOUND", message: "文档不存在" },
     };
   }
+
   if (doc.status !== "parsed") {
     return {
       success: false,
@@ -89,189 +133,103 @@ export async function extractFromDocument(
     };
   }
 
-  // 2. 获取分段
   const chunks = await getDocumentChunks(documentId);
-  if (!chunks || chunks.length === 0) {
+  if (chunks.length === 0) {
     return {
       success: false,
       error: {
         code: "EMPTY_DOCUMENT",
-        message: "该文档没有可提炼的内容（分段为空）",
+        message: "该文档没有可提炼的内容",
       },
     };
   }
 
-  // 3. 逐段提炼
-  const allCandidates: CandidateKnowledgeItem[] = [];
+  const allExtracted: ExtractedChunk[] = [];
   const errors: Array<{ chunkIndex: number; error: string }> = [];
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
+  for (const chunk of chunks) {
     try {
       const contextualizedText = renderChunkUserPrompt(
         chunk.content,
-        doc.originalName,
+        doc.title ?? doc.originalName ?? doc.fileName ?? "未命名文档",
         chunk.chunkIndex,
         chunks.length
       );
-
       const result = await extractKnowledge(contextualizedText);
 
-      if (
-        result.success &&
-        result.candidates &&
-        result.candidates.length > 0
-      ) {
-        allCandidates.push(...result.candidates);
+      if (result.success && result.candidates?.length) {
+        allExtracted.push(...result.candidates);
       }
-    } catch (err: unknown) {
+    } catch (error) {
       errors.push({
         chunkIndex: chunk.chunkIndex,
-        error: err instanceof Error ? err.message : "提炼失败",
+        error: error instanceof Error ? error.message : "提炼失败",
       });
     }
   }
 
-  // 4. 检查是否全部失败
-  if (allCandidates.length === 0) {
+  if (allExtracted.length === 0) {
     return {
       success: false,
       error: {
         code: "EXTRACTION_FAILED",
         message:
           errors.length === chunks.length
-            ? "所有分段提炼均失败，可能是文档内容不适合提炼或 LLM 服务异常"
-            : `提炼失败: ${errors.map((e) => `第${e.chunkIndex + 1}段: ${e.error}`).join("; ")}`,
+            ? "所有分段提炼均失败"
+            : `提炼失败: ${errors.map((error) => `第 ${error.chunkIndex + 1} 段 ${error.error}`).join("; ")}`,
       },
     };
   }
 
-  // 5. 去重
-  const deduped = deduplicateCandidates(allCandidates);
+  const deduped = deduplicateCandidates(allExtracted);
+  const baseChunk = await prisma.documentChunk.findFirst({
+    where: { documentSourceId: documentId },
+    orderBy: { chunkIndex: "desc" },
+    select: { chunkIndex: true },
+  });
+  const baseChunkIndex = (baseChunk?.chunkIndex ?? -1) + 1;
 
-  // 6. 写入 candidates 表
-  const rows = deduped.map((item) =>
-    toCandidateRow(item, "pending", documentId)
-  );
-  await prisma.candidateKnowledge.createMany({ data: rows });
+  const saved = await prisma.$transaction(async (tx) => {
+    await tx.documentChunk.createMany({
+      data: deduped.map((chunk, index) => ({
+        documentSourceId: documentId,
+        chunkIndex: baseChunkIndex + index,
+        content: chunk.content,
+        category: getChunkCategory(chunk),
+        type: chunk.type,
+        status: "active",
+        embedding: null,
+      })),
+    });
 
-  // 7. 查询刚写入的记录返回
-  const saved = await prisma.candidateKnowledge.findMany({
-    where: { documentSourceId: documentId, status: "pending" },
-    orderBy: { createdAt: "desc" },
-    take: deduped.length,
+    const nextChunks = await tx.documentChunk.findMany({
+      where: {
+        documentSourceId: documentId,
+        chunkIndex: { gte: baseChunkIndex },
+      },
+      orderBy: { chunkIndex: "asc" },
+    });
+
+    await tx.documentSource.update({
+      where: { id: documentId },
+      data: {
+        chunkCount: baseChunkIndex + deduped.length,
+      },
+    });
+
+    return nextChunks;
   });
 
   return {
     success: true,
     data: {
       documentId,
-      documentName: doc.originalName,
+      documentName: doc.title ?? doc.originalName ?? doc.fileName ?? "未命名文档",
       totalChunks: chunks.length,
-      rawCandidateCount: allCandidates.length,
+      rawCandidateCount: allExtracted.length,
       dedupedCandidateCount: deduped.length,
-      candidates: saved.map((c) => ({
-        ...c,
-        suggestedCategory: c.suggestedCategory,
-        suggestedTags: c.suggestedTags,
-      })),
+      chunks: saved.map(toExtractedDocumentChunk),
       errors: errors.length > 0 ? errors : undefined,
     },
   };
-}
-
-// ===== 候选知识 CRUD =====
-
-export async function listCandidates() {
-  const items = await prisma.candidateKnowledge.findMany({
-    where: { status: "pending" },
-    orderBy: { createdAt: "desc" },
-  });
-  return items.map((c) => ({
-    id: c.id,
-    title: c.title,
-    content: c.content,
-    suggested_category: c.suggestedCategory,
-    suggested_tags: JSON.parse(c.suggestedTags || "[]"),
-    type: c.type,
-    status: c.status,
-    documentSourceId: c.documentSourceId,
-    created_at: c.createdAt.toISOString(),
-  }));
-}
-
-export async function getCandidateById(id: string) {
-  return prisma.candidateKnowledge.findUnique({ where: { id } });
-}
-
-export async function deleteCandidateById(id: string) {
-  const existing = await prisma.candidateKnowledge.findUnique({
-    where: { id },
-  });
-  if (!existing) return null;
-  await prisma.candidateKnowledge.delete({ where: { id } });
-  return existing;
-}
-
-export async function listCandidatesByDocument(
-  documentSourceId: string
-) {
-  const items = await prisma.candidateKnowledge.findMany({
-    where: { documentSourceId },
-    orderBy: { createdAt: "desc" },
-  });
-  return items.map((c) => ({
-    id: c.id,
-    title: c.title,
-    content: c.content,
-    suggestedCategory: c.suggestedCategory,
-    suggestedTags: JSON.parse(c.suggestedTags || "[]"),
-    type: c.type,
-    status: c.status,
-    documentSourceId: c.documentSourceId,
-    createdAt: c.createdAt.toISOString(),
-    updatedAt: c.updatedAt.toISOString(),
-  }));
-}
-
-export async function updateCandidate(
-  id: string,
-  data: {
-    title?: string;
-    content?: string;
-    suggestedCategory?: string | null;
-    suggestedTags?: string[];
-    type?: string;
-  }
-) {
-  const existing = await prisma.candidateKnowledge.findUnique({
-    where: { id },
-  });
-  if (!existing) return null;
-
-  return prisma.candidateKnowledge.update({
-    where: { id },
-    data: {
-      ...(data.title !== undefined && { title: data.title }),
-      ...(data.content !== undefined && { content: data.content }),
-      ...(data.suggestedCategory !== undefined && {
-        suggestedCategory: data.suggestedCategory,
-      }),
-      ...(data.suggestedTags !== undefined && {
-        suggestedTags: JSON.stringify(data.suggestedTags),
-      }),
-      ...(data.type !== undefined && { type: data.type }),
-      updatedAt: new Date(),
-    },
-  });
-}
-
-// ===== 确认入库 =====
-
-export async function confirmCandidates(ids: string[]) {
-  const result = await prisma.candidateKnowledge.updateMany({
-    where: { id: { in: ids }, status: "pending" },
-    data: { status: "confirmed", updatedAt: new Date() },
-  });
-  return result.count;
 }

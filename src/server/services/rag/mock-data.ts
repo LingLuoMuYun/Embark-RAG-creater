@@ -2,20 +2,20 @@ import type { KnowledgeChunk } from "@/features/rag/types";
 
 const now = "2026-05-29T10:00:00.000Z";
 
-// 阶段 1 使用这批数据跑通接口闭环；后续替换成 DB + 向量索引读取时，保持 KnowledgeChunk 字段不变。
 export const mockKnowledgeChunks: KnowledgeChunk[] = [
   {
     id: "chunk_wiki_001",
     knowledgeBaseId: "kb_001",
     knowledgeId: "wiki_001",
     title: "账号权限配置说明",
-    content: "管理员可以在系统设置中进入权限管理页面，为成员分配不同角色。常见角色包括管理员、编辑者和普通成员。",
+    content:
+      "管理员可以在系统设置中进入权限管理页面，为成员分配不同角色。常见角色包括管理员、编辑者和普通成员。",
     summary: "说明账号权限和角色配置方式",
-    categoryId: "cat_permission",
+    category: "权限",
     tagIds: ["tag_admin", "tag_permission"],
     status: "available",
-    sourceType: "wiki",
-    chunkType: "wiki",
+    sourceType: "manual",
+    chunkType: "concept",
     chunkIndex: 0,
     sourceChunkIds: ["chunk_doc_001", "chunk_doc_002"],
     metadata: {
@@ -30,13 +30,14 @@ export const mockKnowledgeChunks: KnowledgeChunk[] = [
     knowledgeBaseId: "kb_001",
     knowledgeId: "doc_001",
     title: "权限管理操作手册",
-    content: "进入系统设置后，选择成员管理，点击目标成员右侧的角色按钮，即可修改该成员的权限。保存后权限会立即生效。",
+    content:
+      "进入系统设置后，选择成员管理，点击目标成员右侧的角色按钮，即可修改该成员的权限。保存后权限会立即生效。",
     summary: "成员权限修改步骤",
-    categoryId: "cat_permission",
+    category: "权限",
     tagIds: ["tag_admin", "tag_member"],
     status: "available",
     sourceType: "file",
-    chunkType: "text",
+    chunkType: "procedure",
     chunkIndex: 0,
     nextChunkId: "chunk_doc_002",
     metadata: {
@@ -51,13 +52,14 @@ export const mockKnowledgeChunks: KnowledgeChunk[] = [
     knowledgeBaseId: "kb_001",
     knowledgeId: "doc_001",
     title: "权限管理操作手册",
-    content: "普通成员不能访问管理员专属页面。删除知识库、审核知识、修改权限等操作需要管理员角色。",
+    content:
+      "普通成员不能访问管理员专属页面。删除知识库、审核知识、修改权限等操作需要管理员角色。",
     summary: "管理员专属操作范围",
-    categoryId: "cat_permission",
+    category: "权限",
     tagIds: ["tag_admin", "tag_permission"],
     status: "available",
     sourceType: "file",
-    chunkType: "text",
+    chunkType: "faq",
     chunkIndex: 1,
     prevChunkId: "chunk_doc_001",
     metadata: {
@@ -72,9 +74,10 @@ export const mockKnowledgeChunks: KnowledgeChunk[] = [
     knowledgeBaseId: "kb_rag",
     knowledgeId: "doc_rag_001",
     title: "RAG 检索开发技术方案",
-    content: "RAG 检索初版先使用 mock 数据跑通闭环，再逐步接入 embedding、向量检索、BM25 混合检索和离线评测。",
+    content:
+      "RAG 检索初版先使用 mock 数据跑通闭环，再逐步接入 embedding、向量检索、BM25 混合检索和离线评测。",
     summary: "RAG 检索开发路线",
-    categoryId: "cat_rag",
+    category: "RAG",
     tagIds: ["tag_rag", "tag_retrieval"],
     status: "available",
     sourceType: "manual",
@@ -94,7 +97,7 @@ export const mockKnowledgeChunks: KnowledgeChunk[] = [
     content: "这是一段已禁用的旧版权限说明，检索模块不应返回它。",
     status: "disabled",
     sourceType: "file",
-    chunkType: "text",
+    chunkType: "note",
     chunkIndex: 0,
     createdAt: now,
     updatedAt: now,

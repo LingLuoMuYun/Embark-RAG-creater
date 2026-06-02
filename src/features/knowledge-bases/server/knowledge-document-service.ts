@@ -15,17 +15,27 @@ import type {
 
 export async function getDocumentListService(params: {
   keyword?: string;
-  sourceType?: "manual" | "file" | "url" | "text" | "markdown" | "image" | "all";
+  sourceType?:
+    | "manual"
+    | "file"
+    | "url"
+    | "text"
+    | "markdown"
+    | "image"
+    | "ai"
+    | "all";
   status?: "active" | "disabled" | "all";
   parseStatus?: "pending" | "processing" | "success" | "failed" | "all";
 }) {
-  const where: Prisma.KnowledgeDocumentWhereInput = {
+  const where: Prisma.DocumentSourceWhereInput = {
     ...(params.keyword
       ? {
           OR: [
             { title: { contains: params.keyword } },
+            { originalName: { contains: params.keyword } },
             { fileName: { contains: params.keyword } },
             { rawContent: { contains: params.keyword } },
+            { content: { contains: params.keyword } },
           ],
         }
       : {}),
@@ -40,7 +50,7 @@ export async function getDocumentListService(params: {
       : {}),
   };
 
-  const documents = await prisma.knowledgeDocument.findMany({
+  const documents = await prisma.documentSource.findMany({
     where,
     orderBy: { updatedAt: "desc" },
     include: {
@@ -99,40 +109,45 @@ export async function createDocumentService(input: CreateKnowledgeDocumentInput)
     const knowledgeBaseIds = input.knowledgeBaseIds
       ? await assertKnowledgeBaseIdsExist(tx, input.knowledgeBaseIds)
       : [];
+    const chunks = input.chunks ?? [];
 
-    const document = await tx.knowledgeDocument.create({
+    const document = await tx.documentSource.create({
       data: {
-        knowledgeBaseId: knowledgeBaseIds[0],
         title: input.title,
         sourceType: input.sourceType,
+        originalName: input.originalName ?? input.fileName,
+        fileType: input.fileType,
         fileName: input.fileName,
         fileUrl: input.fileUrl,
         mimeType: input.mimeType,
         fileSize: input.fileSize,
-        rawContent: input.rawContent,
-        chunkSize: input.chunkSize,
-        chunkOverlap: input.chunkOverlap,
+        content: input.content ?? input.rawContent,
+        rawContent: input.rawContent ?? input.content,
         parseStatus: input.parseStatus,
         status: input.status,
-        error: input.error,
-        chunks: input.chunks
-          ? {
-              create: input.chunks.map((chunk) => ({
-                content: chunk.content,
-                chunkIndex: chunk.chunkIndex,
-                knowledgeBaseId: knowledgeBaseIds[0],
-                embedding: chunk.embedding,
-                status: chunk.status,
-                startIndex: chunk.startIndex,
-                endIndex: chunk.endIndex,
-              })),
-            }
-          : undefined,
+        errorMessage: input.errorMessage,
+        chunkCount: chunks.length,
+        chunks:
+          chunks.length > 0
+            ? {
+                create: chunks.map((chunk) => ({
+                  content: chunk.content,
+                  chunkIndex: chunk.chunkIndex,
+                  embedding: chunk.embedding,
+                  category: chunk.category,
+                  type: chunk.type,
+                  status: chunk.status,
+                  charStart: chunk.charStart,
+                  charEnd: chunk.charEnd,
+                })),
+              }
+            : undefined,
         knowledgeBases:
           knowledgeBaseIds.length > 0
             ? {
-                create: knowledgeBaseIds.map((knowledgeBaseId) => ({
+                create: knowledgeBaseIds.map((knowledgeBaseId, index) => ({
                   knowledgeBaseId,
+                  sortOrder: index,
                 })),
               }
             : undefined,
@@ -160,7 +175,7 @@ export async function createDocumentService(input: CreateKnowledgeDocumentInput)
 }
 
 export async function getDocumentDetailService(id: string) {
-  const document = await prisma.knowledgeDocument.findUnique({
+  const document = await prisma.documentSource.findUnique({
     where: { id },
     include: {
       chunks: {
@@ -190,21 +205,22 @@ export async function updateDocumentService(
   input: UpdateKnowledgeDocumentInput
 ) {
   try {
-    const document = await prisma.knowledgeDocument.update({
+    const document = await prisma.documentSource.update({
       where: { id },
       data: {
         title: input.title,
         sourceType: input.sourceType,
+        originalName: input.originalName,
+        fileType: input.fileType,
         fileName: input.fileName,
         fileUrl: input.fileUrl,
         mimeType: input.mimeType,
         fileSize: input.fileSize,
+        content: input.content,
         rawContent: input.rawContent,
-        chunkSize: input.chunkSize,
-        chunkOverlap: input.chunkOverlap,
         parseStatus: input.parseStatus,
         status: input.status,
-        error: input.error,
+        errorMessage: input.errorMessage,
       },
       include: {
         chunks: {
@@ -239,7 +255,7 @@ export async function updateDocumentService(
 
 export async function deleteDocumentService(id: string) {
   try {
-    await prisma.knowledgeDocument.delete({ where: { id } });
+    await prisma.documentSource.delete({ where: { id } });
     return { id };
   } catch (error) {
     if (
@@ -254,15 +270,15 @@ export async function deleteDocumentService(id: string) {
 }
 
 export async function getDocumentChunksService(id: string) {
-  const document = await prisma.knowledgeDocument.findUnique({
+  const document = await prisma.documentSource.findUnique({
     where: { id },
     select: { id: true },
   });
 
   if (!document) throw notFound("document not found");
 
-  const chunks = await prisma.knowledgeChunk.findMany({
-    where: { documentId: id },
+  const chunks = await prisma.documentChunk.findMany({
+    where: { documentSourceId: id },
     orderBy: { chunkIndex: "asc" },
   });
 
@@ -274,45 +290,40 @@ export async function replaceDocumentChunksService(
   chunks: CreateKnowledgeChunkInput[]
 ) {
   return prisma.$transaction(async (tx) => {
-    const document = await tx.knowledgeDocument.findUnique({
+    const document = await tx.documentSource.findUnique({
       where: { id: documentId },
-      select: {
-        id: true,
-        knowledgeBaseId: true,
-        knowledgeBases: {
-          orderBy: { sortOrder: "asc" },
-          select: { knowledgeBaseId: true },
-        },
-      },
+      select: { id: true },
     });
 
     if (!document) throw notFound("document not found");
 
-    await tx.knowledgeChunk.deleteMany({
-      where: { documentId },
+    await tx.documentChunk.deleteMany({
+      where: { documentSourceId: documentId },
     });
 
     if (chunks.length > 0) {
-      const knowledgeBaseId =
-        document.knowledgeBaseId ??
-        document.knowledgeBases[0]?.knowledgeBaseId;
-
-      await tx.knowledgeChunk.createMany({
+      await tx.documentChunk.createMany({
         data: chunks.map((chunk) => ({
-          documentId,
-          knowledgeBaseId,
+          documentSourceId: documentId,
           content: chunk.content,
           chunkIndex: chunk.chunkIndex,
-          embedding: chunk.embedding,
+          embedding: chunk.embedding ?? null,
+          category: chunk.category,
+          type: chunk.type,
           status: chunk.status,
-          startIndex: chunk.startIndex,
-          endIndex: chunk.endIndex,
+          charStart: chunk.charStart,
+          charEnd: chunk.charEnd,
         })),
       });
     }
 
-    const nextChunks = await tx.knowledgeChunk.findMany({
-      where: { documentId },
+    await tx.documentSource.update({
+      where: { id: documentId },
+      data: { chunkCount: chunks.length },
+    });
+
+    const nextChunks = await tx.documentChunk.findMany({
+      where: { documentSourceId: documentId },
       orderBy: { chunkIndex: "asc" },
     });
 

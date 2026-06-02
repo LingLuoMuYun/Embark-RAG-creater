@@ -15,11 +15,6 @@ model KnowledgeBase {
   icon  String @default("Database")
   color String @default("blue")
 
-  // Compatibility fields used by main branch UI/API. New RAG management stores
-  // chunk settings on KnowledgeDocument.
-  chunkSize    Int @default(800)
-  chunkOverlap Int @default(100)
-
   similarityThreshold Float @default(0.7)
   topK                Int   @default(5)
 
@@ -30,42 +25,6 @@ model KnowledgeBase {
 
   documents KnowledgeBaseDocument[]
 
-  @@index([status])
-}
-
-model KnowledgeDocument {
-  id    String @id @default(cuid())
-  title String
-
-  // Compatibility scalar for main branch code that still filters documents by
-  // a single knowledge base. The canonical relation is KnowledgeBaseDocument.
-  knowledgeBaseId String?
-
-  sourceType String @default("manual")
-
-  fileName String?
-  fileUrl  String?
-  mimeType String?
-  fileSize Int?
-
-  rawContent String?
-
-  chunkSize    Int @default(800)
-  chunkOverlap Int @default(100)
-
-  parseStatus String @default("pending")
-  status      String @default("active")
-  error       String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  knowledgeBases KnowledgeBaseDocument[]
-  chunks         KnowledgeChunk[]
-
-  @@index([knowledgeBaseId])
-  @@index([sourceType])
-  @@index([parseStatus])
   @@index([status])
 }
 
@@ -80,8 +39,8 @@ model KnowledgeBaseDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  knowledgeBase KnowledgeBase     @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase  @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  document      DocumentSource @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([knowledgeBaseId, documentId])
   @@index([knowledgeBaseId])
@@ -89,48 +48,57 @@ model KnowledgeBaseDocument {
   @@index([status])
 }
 
-model KnowledgeChunk {
-  id         String @id @default(cuid())
-  documentId String
+model DocumentSource {
+  id           String   @id @default(cuid())
+  title        String
+  sourceType   String   @default("manual")
+  originalName String?
+  fileType     String?
+  fileName     String?
+  fileUrl      String?
+  mimeType     String?
+  fileSize     Int?
+  status       String   @default("uploading")
+  content      String?
+  rawContent   String?
+  parseStatus  String   @default("pending")
+  errorMessage String?
+  chunkCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  // Compatibility scalar for main branch RAG/Agent code. New RAG management
-  // resolves knowledge base scope through KnowledgeBaseDocument.
-  knowledgeBaseId String?
+  chunks         DocumentChunk[]
+  knowledgeBases KnowledgeBaseDocument[]
 
-  content    String
-  chunkIndex Int
+  @@index([status])
+  @@index([sourceType])
+  @@index([parseStatus])
+}
+
+model DocumentChunk {
+  id               String @id @default(cuid())
+  documentSourceId String
+  chunkIndex       Int
+  content          String
+  charStart        Int?
+  charEnd          Int?
 
   embedding String?
+  category  String?
+  type      String  @default("note")
 
   status String @default("active")
 
-  startIndex Int?
-  endIndex   Int?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentSource DocumentSource @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
 
-  @@index([knowledgeBaseId])
-  @@index([documentId])
+  @@index([documentSourceId])
+  @@index([documentSourceId, chunkIndex])
   @@index([status])
-  @@index([knowledgeBaseId, status])
-  @@index([documentId, status])
-}
-
-model ChunkEmbedding {
-  chunkId        String @id
-  embedding      String
-  embeddingModel String
-  contentHash    String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([embeddingModel])
-  @@index([contentHash])
-  @@index([updatedAt])
+  @@index([type])
+  @@index([category])
 }
 
 model KnowledgeCategory {
@@ -158,54 +126,6 @@ model KnowledgeTag {
 
   @@index([sortOrder])
   @@index([createdAt])
-}
-model DocumentSource {
-  id           String   @id @default(cuid())
-  originalName String
-  fileType     String
-  fileSize     Int
-  status       String   @default("uploading")
-  content      String?
-  errorMessage String?
-  chunkCount   Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  chunks DocumentChunk[]
-
-  @@index([status])
-}
-
-model DocumentChunk {
-  id               String   @id @default(cuid())
-  documentSourceId String
-  chunkIndex       Int
-  content          String
-  charStart        Int
-  charEnd          Int
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  documentSource DocumentSource @relation(fields: [documentSourceId], references: [id], onDelete: Cascade)
-
-  @@index([documentSourceId])
-  @@index([documentSourceId, chunkIndex])
-}
-
-model CandidateKnowledge {
-  id                String   @id @default(cuid())
-  documentSourceId  String?  // 来源文档 ID（关联 DocumentSource，可选）
-  title             String   // AI 提炼的知识标题
-  content           String   // AI 提炼的知识正文
-  suggestedCategory String?  // AI 建议的分类名称（纯文本）
-  suggestedTags     String?  // AI 建议的标签列表（JSON 数组字符串）
-  type              String   @default("concept") // faq | concept | procedure | note | summary
-  status            String   @default("pending") // pending | confirmed | rejected
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  @@index([status])
-  @@index([documentSourceId])
 }
 
 model ExpertAgent {
@@ -297,7 +217,8 @@ model UsageReference {
   knowledgeId     String
   chunkId         String
   title           String
-  chunkType       String
+  type            String
+  chunkType       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -308,5 +229,6 @@ model UsageReference {
   @@index([knowledgeBaseId])
   @@index([knowledgeId])
   @@index([chunkId])
+  @@index([type])
   @@index([chunkType])
 }

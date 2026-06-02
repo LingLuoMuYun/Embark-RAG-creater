@@ -262,11 +262,22 @@ export function validateUploadFile(params: {
 
 // 根据上传文件生成本地模拟文档数据。
 export function createMockDocumentFromFile(file: File): RagDoc {
+  const now = new Date().toISOString();
+
   return {
     id: createClientId(),
+    title: file.name,
     name: file.name,
+    sourceType: "file",
+    fileName: file.name,
+    fileSize: file.size,
+    parseStatus: "pending",
+    status: "active",
+    chunkCount: 0,
     size: file.size,
-    uploadedAt: new Date().toISOString(),
+    uploadedAt: now,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -281,6 +292,11 @@ export function createMockChunksForDocument(doc: RagDoc): RagChunk[] {
       id: createClientId(),
       documentId: doc.id,
       content,
+      chunkIndex: index,
+      embedding: null,
+      category: null,
+      type: "note",
+      status: "active",
       charCount: content.length,
       tokenCount: Math.ceil(content.length / 2),
       createdAt: new Date().toISOString(),
@@ -301,18 +317,58 @@ export function getTotalChunkCount(
 // 将接口或模拟数据归一化为知识文档。
 export function normalizeRagDoc(input: unknown): RagDoc {
   const item = isRecord(input) ? input : {};
+  const title =
+    typeof item.title === "string" && item.title.trim()
+      ? item.title
+      : typeof item.name === "string" && item.name.trim()
+        ? item.name
+        : typeof item.fileName === "string" && item.fileName.trim()
+          ? item.fileName
+          : "未命名文档";
+  const fileSize = toNumberValue(item.fileSize, toNumberValue(item.size, 0));
 
   return {
     id: typeof item.id === "string" ? item.id : createClientId(),
+    title,
     name:
       typeof item.name === "string" && item.name.trim()
         ? item.name
-        : "未命名文档",
-    size: toNumberValue(item.size, 0),
+        : title,
+    sourceType:
+      typeof item.sourceType === "string" && item.sourceType.trim()
+        ? item.sourceType
+        : "manual",
+    fileName: typeof item.fileName === "string" ? item.fileName : null,
+    fileUrl: typeof item.fileUrl === "string" ? item.fileUrl : null,
+    mimeType: typeof item.mimeType === "string" ? item.mimeType : null,
+    fileSize,
+    rawContent: typeof item.rawContent === "string" ? item.rawContent : null,
+    parseStatus:
+      typeof item.parseStatus === "string" && item.parseStatus.trim()
+        ? item.parseStatus
+        : "pending",
+    status:
+      typeof item.status === "string" && item.status.trim()
+        ? item.status
+        : "active",
+    error: typeof item.error === "string" ? item.error : null,
+    chunkCount: toNumberValue(item.chunkCount, 0),
+    size: fileSize,
     uploadedAt:
       typeof item.uploadedAt === "string" && item.uploadedAt.trim()
         ? item.uploadedAt
         : "--",
+    createdAt:
+      typeof item.createdAt === "string" && item.createdAt.trim()
+        ? item.createdAt
+        : "--",
+    updatedAt:
+      typeof item.updatedAt === "string" && item.updatedAt.trim()
+        ? item.updatedAt
+        : "--",
+    chunks: Array.isArray(item.chunks)
+      ? item.chunks.map(normalizeRagChunk)
+      : undefined,
   };
 }
 
@@ -328,6 +384,25 @@ export function normalizeRagChunk(input: unknown): RagChunk {
     id: typeof item.id === "string" ? item.id : createClientId(),
     documentId: typeof item.documentId === "string" ? item.documentId : "",
     content,
+    chunkIndex: toNumberValue(item.chunkIndex, 0),
+    embedding: typeof item.embedding === "string" ? item.embedding : null,
+    category: typeof item.category === "string" ? item.category : null,
+    type:
+      typeof item.type === "string" && item.type.trim()
+        ? item.type
+        : "note",
+    status:
+      typeof item.status === "string" && item.status.trim()
+        ? item.status
+        : "active",
+    startIndex:
+      typeof item.startIndex === "number" && Number.isFinite(item.startIndex)
+        ? item.startIndex
+        : null,
+    endIndex:
+      typeof item.endIndex === "number" && Number.isFinite(item.endIndex)
+        ? item.endIndex
+        : null,
     charCount: toNumberValue(item.charCount, content.length),
     tokenCount:
       typeof item.tokenCount === "number" && Number.isFinite(item.tokenCount)
@@ -336,6 +411,10 @@ export function normalizeRagChunk(input: unknown): RagChunk {
     createdAt:
       typeof item.createdAt === "string" && item.createdAt.trim()
         ? item.createdAt
+        : "--",
+    updatedAt:
+      typeof item.updatedAt === "string" && item.updatedAt.trim()
+        ? item.updatedAt
         : "--",
   };
 }

@@ -33,7 +33,7 @@ type ContextBlock = {
   content: string;
   chunkType: KnowledgeChunk["chunkType"];
   score: number;
-  categoryId?: string;
+  category?: string;
   tagIds?: string[];
   metadata?: Record<string, unknown>;
   referenceChunks: KnowledgeChunk[];
@@ -85,7 +85,7 @@ export function buildRetrieveResponse(
       content,
       chunkType: block.chunkType,
       score: block.score,
-      categoryId: block.categoryId,
+      category: block.category,
       tagIds: block.tagIds,
       metadata: block.metadata,
     };
@@ -219,7 +219,7 @@ function createContextBlock(
     content: mergeChunkContents(chunks),
     chunkType: primaryChunk.chunk.chunkType,
     score: primaryChunk.score,
-    categoryId: primaryChunk.chunk.categoryId,
+    category: primaryChunk.chunk.category,
     tagIds: primaryChunk.chunk.tagIds,
     metadata,
     referenceChunks: chunks,

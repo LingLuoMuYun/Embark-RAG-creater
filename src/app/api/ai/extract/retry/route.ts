@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import { RetryRequestSchema } from "@/features/extraction/extraction.validation";
 import { extractFromDocument } from "@/server/services/extraction.service";
 
@@ -20,16 +21,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { documentId } = parsed.data;
-
-    // 先删除该文档已有的候选知识
-    const { prisma } = await import("@/lib/db");
-    await prisma.candidateKnowledge.deleteMany({
-      where: { documentSourceId: documentId, status: "pending" },
-    });
-
-    // 重新提炼
-    const result = await extractFromDocument(documentId);
+    const result = await extractFromDocument(parsed.data.documentId);
 
     if (!result.success) {
       return NextResponse.json(
@@ -54,19 +46,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: {
-        documentId: data.documentId,
-        documentName: data.documentName,
-        totalChunks: data.totalChunks,
-        dedupedCandidateCount: data.dedupedCandidateCount,
-        candidates: data.candidates,
-        errors: data.errors,
-      },
-      message: `重试成功，从「${data.documentName}」提炼 ${data.dedupedCandidateCount} 条候选知识`,
+      data,
+      message: `重试成功，从《${data.documentName}》提炼 ${data.dedupedCandidateCount} 条知识分片`,
     });
-  } catch (err: unknown) {
+  } catch (error: unknown) {
     const message =
-      err instanceof Error ? err.message : "服务器内部错误";
+      error instanceof Error ? error.message : "服务器内部错误";
     return NextResponse.json(
       {
         success: false,

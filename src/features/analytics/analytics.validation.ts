@@ -21,7 +21,7 @@ export const ragContextSchema = z.object({
   content: z.string(),
   chunkType: agentChunkTypeSchema,
   score: z.number(),
-  categoryId: z.string().trim().min(1).optional(),
+  category: z.string().trim().min(1).optional(),
   tagIds: z.array(z.string().trim().min(1)).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

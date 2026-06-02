@@ -1,18 +1,24 @@
-/**
- * RAG 模块对外字段契约。
- *
- * 这里的类型要尽量和 docs/知识入库字段建议以及请求检索接口对接文档.md 保持一致。
- * 检索算法、向量库、rerank 等内部实现可以替换，但不要随意改这些对接字段。
- */
 export type KnowledgeChunkStatus = "pending" | "available" | "disabled";
 
-export type KnowledgeSourceType = "manual" | "file" | "wiki" | "import";
+export type KnowledgeSourceType =
+  | "manual"
+  | "file"
+  | "url"
+  | "text"
+  | "markdown"
+  | "image"
+  | "ai"
+  | "import";
 
-export type KnowledgeChunkType = "text" | "wiki" | "summary" | "qa";
+export type KnowledgeChunkType =
+  | "faq"
+  | "concept"
+  | "procedure"
+  | "note"
+  | "summary";
 
 export type RetrievalMode = "fast" | "balanced" | "detailed";
 
-/** 入库侧提供给 RAG 检索模块消费的最小知识片段。 */
 export type KnowledgeChunk = {
   id: string;
   knowledgeBaseId: string;
@@ -20,7 +26,7 @@ export type KnowledgeChunk = {
   title: string;
   content: string;
   summary?: string;
-  categoryId?: string;
+  category?: string;
   tagIds?: string[];
   status: KnowledgeChunkStatus;
   sourceType: KnowledgeSourceType;
@@ -35,23 +41,20 @@ export type KnowledgeChunk = {
   updatedAt: string;
 };
 
-/** Agent 或问答模块传入的检索范围。 */
 export type RagRetrieveScope = {
   knowledgeBaseIds: string[];
   knowledgeIds?: string[];
-  categoryIds?: string[];
+  categories?: string[];
   tagIds?: string[];
-  chunkTypes?: KnowledgeChunkType[];
+  types?: KnowledgeChunkType[];
 };
 
-/** /api/rag/retrieve 的请求体。 */
 export type RagRetrieveRequest = {
   query: string;
   scope: RagRetrieveScope;
   mode?: RetrievalMode;
 };
 
-/** 单条可交给 LLM 参考的结构化上下文。 */
 export type RagContext = {
   id: string;
   knowledgeBaseId: string;
@@ -61,12 +64,11 @@ export type RagContext = {
   content: string;
   chunkType: KnowledgeChunkType;
   score: number;
-  categoryId?: string;
+  category?: string;
   tagIds?: string[];
   metadata?: Record<string, unknown>;
 };
 
-/** 引用来源，refId 必须能对应 llmContext 中的 [ref_n]。 */
 export type RagReference = {
   refId: string;
   knowledgeBaseId: string;
@@ -86,7 +88,6 @@ export type RagRetrieveMetrics = {
   topScore?: number;
 };
 
-/** /api/rag/retrieve 的响应体。 */
 export type RagRetrieveResponse = {
   query: string;
   contexts: RagContext[];

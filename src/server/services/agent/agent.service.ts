@@ -32,9 +32,9 @@ export type AgentValidationResult = {
   ragScope: {
     knowledgeBaseIds: string[];
     knowledgeIds?: string[];
-    categoryIds?: string[];
+    categories?: string[];
     tagIds?: string[];
-    chunkTypes?: string[];
+    types?: string[];
   } | null;
 };
 
@@ -201,10 +201,10 @@ export async function validateAgentAvailability(
           knowledgeBaseIds: scope.knowledgeBaseIds,
           knowledgeIds:
             scope.knowledgeIds.length > 0 ? scope.knowledgeIds : undefined,
-          categoryIds:
+          categories:
             scope.categoryIds.length > 0 ? scope.categoryIds : undefined,
           tagIds: scope.tagIds.length > 0 ? scope.tagIds : undefined,
-          chunkTypes:
+          types:
             scope.chunkTypes.length > 0 ? scope.chunkTypes : undefined,
         }
       : null,
@@ -244,16 +244,41 @@ async function countAvailableKnowledgeChunks(
   scope: AgentKnowledgeScope,
   activeStatuses: string[]
 ): Promise<number> {
-  const where: Prisma.KnowledgeChunkWhereInput = {
-    knowledgeBaseId: { in: scope.knowledgeBaseIds },
-    status: { in: activeStatuses },
-  };
+  const relations = await prisma.knowledgeBaseDocument.findMany({
+    where: {
+      knowledgeBaseId: { in: scope.knowledgeBaseIds },
+      status: "active",
+      documentId:
+        scope.knowledgeIds.length > 0 ? { in: scope.knowledgeIds } : undefined,
+      document: {
+        chunks: {
+          some: {
+            status: { in: activeStatuses },
+          },
+        },
+      },
+    },
+    include: {
+      document: {
+        select: {
+          _count: {
+            select: {
+              chunks: {
+                where: {
+                  status: { in: activeStatuses },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
 
-  if (scope.knowledgeIds.length > 0) {
-    where.documentId = { in: scope.knowledgeIds };
-  }
-
-  return prisma.knowledgeChunk.count({ where });
+  return relations.reduce(
+    (count, relation) => count + relation.document._count.chunks,
+    0
+  );
 }
 
 function getUncheckedScopeFields(scope: AgentKnowledgeScope): string[] {

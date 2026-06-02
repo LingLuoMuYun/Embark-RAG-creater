@@ -39,17 +39,17 @@ export const ragEvalCases: RetrievalEvalCase[] = [
     query: "权限管理在哪里设置？",
     scope: {
       knowledgeBaseIds: ["kb_001"],
-      categoryIds: ["cat_permission"],
+      categories: ["权限"],
     },
     mode: "balanced",
     expectedKnowledgeIds: ["wiki_001", "doc_001"],
   },
   {
-    id: "wiki_chunk_type_filter",
+    id: "concept_chunk_type_filter",
     query: "账号权限配置说明",
     scope: {
       knowledgeBaseIds: ["kb_001"],
-      chunkTypes: ["wiki"],
+      types: ["concept"],
     },
     mode: "balanced",
     expectedChunkIds: ["chunk_wiki_001"],
