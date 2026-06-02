@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  type ComponentType,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ComponentType, useEffect, useMemo, useState } from "react";
 import {
   Archive,
   BookOpen,
@@ -118,30 +112,27 @@ const statusFilterCards: Array<{
   {
     key: "all",
     title: "知识库总量",
-    description: "全部知识库",
+    description: "包含全部的知识库，禁用以及启用",
     iconClassName: "text-blue-600 bg-blue-50",
   },
   {
     key: "active",
     title: "启用知识库",
-    description: "当前可用于检索",
+    description: "点击可以查看当前可用于检索的知识库",
     iconClassName: "text-emerald-600 bg-emerald-50",
   },
   {
     key: "disabled",
-    title: "禁用知识库",
-    description: "暂不可用于检索",
+    title: "待确认知识库",
+    description: "点击可以查看当前不可用的知识库",
     iconClassName: "text-red-600 bg-red-50",
   },
 ];
 
 function formatDate(value: string) {
   if (value === "--") return "--";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return "--";
-
   return date.toLocaleString();
 }
 
@@ -150,7 +141,6 @@ function getStatusText(status: RagListItem["status"]) {
 }
 
 export function RagManage() {
-  const didHydrate = useRef(false);
   const items = useAppStore((state) => state.items);
   const loading = useAppStore((state) => state.loading);
   const error = useAppStore((state) => state.error);
@@ -184,10 +174,7 @@ export function RagManage() {
   const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (didHydrate.current) return;
-
     let ignore = false;
-    didHydrate.current = true;
 
     async function loadRagItems() {
       setLoading(true);
@@ -235,6 +222,7 @@ export function RagManage() {
       }),
     [items, sortDirection, sortField, statusFilter, submittedSearchKeyword]
   );
+  const showInitialLoading = loading && items.length === 0;
 
   function toggleStatusFilter(nextFilter: Exclude<StatusFilter, null>) {
     setStatusFilter((current) => (current === nextFilter ? null : nextFilter));
@@ -479,7 +467,7 @@ export function RagManage() {
             ) : (
               <SortAsc data-icon="inline-start" />
             )}
-            排序倒置
+            排序
           </Button>
 
           <Button type="button" onClick={openCreateDialog}>
@@ -489,7 +477,7 @@ export function RagManage() {
         </CardContent>
       </Card>
 
-      {loading ? (
+      {showInitialLoading ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             正在加载知识库...
@@ -497,7 +485,7 @@ export function RagManage() {
         </Card>
       ) : null}
 
-      {!loading && items.length === 0 ? (
+      {!showInitialLoading && items.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <Database className="size-8 text-muted-foreground" />
@@ -513,7 +501,7 @@ export function RagManage() {
         </Card>
       ) : null}
 
-      {!loading && items.length > 0 && visibleItems.length === 0 ? (
+      {!showInitialLoading && items.length > 0 && visibleItems.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             没有找到符合条件的知识库
