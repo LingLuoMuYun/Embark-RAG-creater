@@ -1,4 +1,14 @@
 import { RAG_CONFIG } from "@/server/services/rag/config";
+import {
+  countAsciiTokenMatches,
+  countSubstringMatches,
+  getCjkText,
+  normalizeCompactAsciiText,
+  normalizeSearchText,
+  tokenizeAscii,
+  tokenizeSearchText,
+  type SearchToken,
+} from "@/server/services/rag/text-match";
 import type { KnowledgeChunk } from "@/features/rag/types";
 
 /**
@@ -16,11 +26,7 @@ export type ExactTermSearchResult = {
   source: "exact";
 };
 
-type ExactTerm = {
-  value: string;
-  kind: "ascii" | "cjk";
-  weight: number;
-};
+type ExactTerm = SearchToken;
 
 type QueryProfile = {
   phrase: string;
@@ -30,6 +36,7 @@ type QueryProfile = {
 type SearchField = {
   text: string;
   weight: number;
+  phraseBoost: number;
 };
 
 export function searchByExactTerms(
@@ -56,11 +63,12 @@ export function searchByExactTerms(
 }
 
 function buildQueryProfile(query: string): QueryProfile {
-  const phrase = normalizeText(query);
-  const terms = [
-    ...extractAsciiTerms(query),
-    ...extractCjkTerms(query),
-  ].slice(0, RAG_CONFIG.maxExactTerms);
+  const phrase = normalizeSearchText(query);
+  const terms = tokenizeSearchText(query, {
+    cjkGramSizes: [4, 3, 2],
+    includeSingleCjk: true,
+    maxTokens: RAG_CONFIG.maxExactTerms,
+  });
 
   return {
     phrase,
@@ -80,18 +88,22 @@ function getSearchFields(chunk: KnowledgeChunk): SearchField[] {
     {
       text: chunk.title,
       weight: RAG_CONFIG.exactTitleWeight,
+      phraseBoost: RAG_CONFIG.exactTitlePhraseBoost,
     },
     {
       text: chunk.summary ?? "",
       weight: RAG_CONFIG.exactSummaryWeight,
+      phraseBoost: RAG_CONFIG.exactSummaryPhraseBoost,
     },
     {
       text: chunk.content,
       weight: RAG_CONFIG.exactContentWeight,
+      phraseBoost: RAG_CONFIG.exactContentPhraseBoost,
     },
     {
       text: chunk.metadata ? JSON.stringify(chunk.metadata) : "",
       weight: RAG_CONFIG.exactMetadataWeight,
+      phraseBoost: RAG_CONFIG.exactMetadataPhraseBoost,
     },
   ];
 }
@@ -99,7 +111,8 @@ function getSearchFields(chunk: KnowledgeChunk): SearchField[] {
 function scoreField(field: SearchField, queryProfile: QueryProfile): number {
   if (!field.text.trim()) return 0;
 
-  const normalizedText = normalizeText(field.text);
+  const normalizedText = normalizeSearchText(field.text);
+  const compactAsciiText = normalizeCompactAsciiText(field.text);
   const asciiTokens = tokenizeAscii(normalizedText);
   const cjkText = getCjkText(normalizedText);
   let score = 0;
@@ -108,111 +121,44 @@ function scoreField(field: SearchField, queryProfile: QueryProfile): number {
     queryProfile.phrase.length >= 2 &&
     normalizedText.includes(queryProfile.phrase)
   ) {
-    score += RAG_CONFIG.exactPhraseWeight;
+    score += RAG_CONFIG.exactPhraseWeight * field.phraseBoost;
   }
 
   for (const term of queryProfile.terms) {
     const matchCount =
       term.kind === "ascii"
-        ? countAsciiMatches(asciiTokens, term.value)
+        ? countAsciiMatches(asciiTokens, compactAsciiText, term.value)
         : countSubstringMatches(cjkText, term.value);
 
     if (matchCount > 0) {
-      score += term.weight * Math.min(matchCount, 3);
+      score +=
+        getExactTermWeight(term) *
+        Math.min(matchCount, RAG_CONFIG.exactMaxFieldMatches);
     }
   }
 
   return score * field.weight;
 }
 
-function extractAsciiTerms(query: string): ExactTerm[] {
-  return unique(tokenizeAscii(normalizeText(query)))
-    .filter((term) => term.length >= 2)
-    .map((term) => ({
-      value: term,
-      kind: "ascii" as const,
-      weight: 1,
-    }));
+function countAsciiMatches(
+  tokens: string[],
+  compactAsciiText: string,
+  term: string
+): number {
+  const tokenMatches = countAsciiTokenMatches(tokens, term);
+  if (tokenMatches > 0) return tokenMatches;
+  return countSubstringMatches(compactAsciiText, term);
 }
 
-function extractCjkTerms(query: string): ExactTerm[] {
-  const cjkText = getCjkText(query);
-  if (cjkText.length === 0) return [];
-  if (cjkText.length === 1) {
-    return [
-      {
-        value: cjkText,
-        kind: "cjk",
-        weight: 0.5,
-      },
-    ];
+function getExactTermWeight(term: ExactTerm): number {
+  let weight = term.weight;
+
+  if (term.kind === "cjk" && term.length >= 3) {
+    weight *= RAG_CONFIG.exactCjkLongTermWeight;
+  }
+  if (term.kind === "ascii" && term.isIdentifier) {
+    weight *= RAG_CONFIG.exactAsciiIdentifierWeight;
   }
 
-  const terms: ExactTerm[] = [];
-  const maxSize = Math.min(4, cjkText.length);
-
-  for (let size = maxSize; size >= 2; size -= 1) {
-    for (let index = 0; index <= cjkText.length - size; index += 1) {
-      terms.push({
-        value: cjkText.slice(index, index + size),
-        kind: "cjk",
-        weight: size / 2,
-      });
-    }
-  }
-
-  return uniqueTerms(terms);
-}
-
-function normalizeText(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[？?！!。；;，,、：:"“”‘’'()（）[\]{}<>《》]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenizeAscii(input: string): string[] {
-  return input.match(/[a-z0-9_]+/g) ?? [];
-}
-
-function getCjkText(input: string): string {
-  return Array.from(input)
-    .filter((char) => /[\u4e00-\u9fff]/.test(char))
-    .join("");
-}
-
-function countAsciiMatches(tokens: string[], term: string): number {
-  return tokens.filter((token) => token === term).length;
-}
-
-function countSubstringMatches(text: string, term: string): number {
-  let count = 0;
-  let index = text.indexOf(term);
-
-  while (index >= 0) {
-    count += 1;
-    index = text.indexOf(term, index + term.length);
-  }
-
-  return count;
-}
-
-function unique(values: string[]): string[] {
-  return Array.from(new Set(values));
-}
-
-function uniqueTerms(terms: ExactTerm[]): ExactTerm[] {
-  const seen = new Set<string>();
-  const result: ExactTerm[] = [];
-
-  for (const term of terms) {
-    const key = `${term.kind}:${term.value}`;
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    result.push(term);
-  }
-
-  return result;
+  return weight;
 }

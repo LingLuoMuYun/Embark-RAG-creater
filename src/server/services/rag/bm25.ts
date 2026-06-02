@@ -1,4 +1,8 @@
 import { RAG_CONFIG } from "@/server/services/rag/config";
+import {
+  tokenizeSearchText,
+  type SearchToken,
+} from "@/server/services/rag/text-match";
 import type { KnowledgeChunk } from "@/features/rag/types";
 
 /**
@@ -35,7 +39,7 @@ export function searchByBm25(
   chunks: KnowledgeChunk[],
   query: string
 ): Bm25SearchResult[] {
-  const queryTerms = tokenize(query);
+  const queryTerms = tokenizeForBm25(query);
   if (queryTerms.length === 0 || chunks.length === 0) return [];
 
   const indexedChunks = chunks.map(indexChunk);
@@ -43,17 +47,17 @@ export function searchByBm25(
     indexedChunks.reduce((sum, item) => sum + item.length, 0) /
     indexedChunks.length;
   const documentFrequency = getDocumentFrequency(indexedChunks);
-  const uniqueQueryTerms = Array.from(new Set(queryTerms));
+  const uniqueQueryTerms = getUniqueTokens(queryTerms);
 
   return indexedChunks
     .map(({ chunk, termFrequency, length }) => {
       let score = 0;
 
       for (const term of uniqueQueryTerms) {
-        const frequency = termFrequency.get(term) ?? 0;
+        const frequency = termFrequency.get(term.value) ?? 0;
         if (frequency === 0) continue;
 
-        const df = documentFrequency.get(term) ?? 0;
+        const df = documentFrequency.get(term.value) ?? 0;
         const idf = Math.log(
           1 + (indexedChunks.length - df + 0.5) / (df + 0.5)
         );
@@ -62,7 +66,10 @@ export function searchByBm25(
           BM25_K1 *
             (1 - BM25_B + BM25_B * (length / Math.max(averageLength, 1)));
 
-        score += idf * ((frequency * (BM25_K1 + 1)) / denominator);
+        score +=
+          getQueryTermWeight(term) *
+          idf *
+          ((frequency * (BM25_K1 + 1)) / denominator);
       }
 
       return {
@@ -86,18 +93,23 @@ function indexChunk(chunk: KnowledgeChunk): IndexedChunk {
 
   length += addWeightedTerms(
     termFrequency,
-    tokenize(chunk.title),
+    tokenizeForBm25(chunk.title),
     RAG_CONFIG.bm25TitleWeight
   );
   length += addWeightedTerms(
     termFrequency,
-    tokenize(chunk.summary ?? ""),
+    tokenizeForBm25(chunk.summary ?? ""),
     RAG_CONFIG.bm25SummaryWeight
   );
   length += addWeightedTerms(
     termFrequency,
-    tokenize(chunk.content),
+    tokenizeForBm25(chunk.content),
     RAG_CONFIG.bm25ContentWeight
+  );
+  length += addWeightedTerms(
+    termFrequency,
+    tokenizeForBm25(getMetadataText(chunk)),
+    RAG_CONFIG.bm25MetadataWeight
   );
 
   return {
@@ -122,32 +134,62 @@ function getDocumentFrequency(indexedChunks: IndexedChunk[]): Map<string, number
 
 function addWeightedTerms(
   termFrequency: Map<string, number>,
-  tokens: string[],
+  tokens: SearchToken[],
   weight: number
 ): number {
+  let length = 0;
+
   for (const token of tokens) {
-    termFrequency.set(token, (termFrequency.get(token) ?? 0) + weight);
+    const weightedTermFrequency = weight * getIndexTermWeight(token);
+    termFrequency.set(
+      token.value,
+      (termFrequency.get(token.value) ?? 0) + weightedTermFrequency
+    );
+    length += weightedTermFrequency;
   }
 
-  return tokens.length * weight;
+  return length;
 }
 
-/** 轻量分词：英文/数字按词，中文按相邻双字 bigram。 */
-function tokenize(input: string): string[] {
-  const normalized = input.toLowerCase().trim();
-  const asciiTokens = normalized.match(/[a-z0-9_]+/g) ?? [];
-  const cjkText = Array.from(normalized)
-    .filter((char) => /[\u4e00-\u9fff]/.test(char))
-    .join("");
-  const cjkTokens: string[] = [];
+/** BM25 使用英文/数字标识符、中文 bigram 和 trigram 作为轻量关键词。 */
+function tokenizeForBm25(input: string): SearchToken[] {
+  return tokenizeSearchText(input, {
+    cjkGramSizes: [2, 3],
+    includeSingleCjk: true,
+  });
+}
 
-  if (cjkText.length === 1) {
-    cjkTokens.push(cjkText);
+function getIndexTermWeight(token: SearchToken): number {
+  let weight = token.weight;
+
+  if (token.kind === "cjk" && token.length >= 3) {
+    weight *= RAG_CONFIG.bm25CjkLongTermWeight;
+  }
+  if (token.kind === "ascii" && token.isIdentifier) {
+    weight *= RAG_CONFIG.bm25AsciiIdentifierWeight;
   }
 
-  for (let index = 0; index < cjkText.length - 1; index += 1) {
-    cjkTokens.push(cjkText.slice(index, index + 2));
+  return weight;
+}
+
+function getQueryTermWeight(token: SearchToken): number {
+  return getIndexTermWeight(token);
+}
+
+function getUniqueTokens(tokens: SearchToken[]): SearchToken[] {
+  const tokensByValue = new Map<string, SearchToken>();
+
+  for (const token of tokens) {
+    const current = tokensByValue.get(token.value);
+
+    if (!current || getQueryTermWeight(token) > getQueryTermWeight(current)) {
+      tokensByValue.set(token.value, token);
+    }
   }
 
-  return [...asciiTokens, ...cjkTokens];
+  return Array.from(tokensByValue.values());
+}
+
+function getMetadataText(chunk: KnowledgeChunk): string {
+  return chunk.metadata ? JSON.stringify(chunk.metadata) : "";
 }
