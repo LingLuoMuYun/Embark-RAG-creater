@@ -37,8 +37,25 @@ const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
 // ========== Helpers ==========
 
+const IMAGE_TYPES = ["png", "jpg", "jpeg", "webp", "bmp"];
+
 function containsTable(text: string): boolean {
-  return /^\|.+\|$/m.test(text);
+  // Must have a header row, separator row, and at least one data row
+  return /^\|.+\|\n\|[-| :]+\|\n\|.+\|/m.test(text);
+}
+
+async function splitContentToChunks(
+  rawContent: string,
+  fileType: string
+): Promise<TextChunk[]> {
+  if (IMAGE_TYPES.includes(fileType)) {
+    return [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
+  }
+  const hasTable = containsTable(rawContent);
+  const semanticChunks = hasTable
+    ? null
+    : await splitTextSemantic(rawContent);
+  return semanticChunks ?? splitTextIntoChunks(rawContent);
 }
 
 async function ensureUploadDir(): Promise<void> {
@@ -328,15 +345,17 @@ export async function deleteDocument(id: string) {
   const doc = await prisma.documentSource.findUnique({ where: { id } });
   if (!doc) return null;
 
+  await deleteEmbeddingsForDocumentChunks(id);
+  await prisma.documentSource.delete({ where: { id } });
+
   const filePath = path.join(UPLOAD_DIR, doc.id);
   try {
     await fs.unlink(filePath);
   } catch {
-    // file may not exist on disk
+    // file may not exist on disk; DB record already deleted, orphan file is harmless
   }
 
   await deleteEmbeddingsForDocumentChunks(id);
-  await prisma.documentSource.delete({ where: { id } });
   return doc;
 }
 
@@ -349,7 +368,10 @@ export async function saveDocumentFile(
   await fs.writeFile(filePath, buffer);
 }
 
-export async function parseDocument(id: string): Promise<{
+export async function parseDocument(
+  id: string,
+  onProgress?: (stage: string, percent: number) => void
+): Promise<{
   rawContent: string;
   chunkCount: number;
 }> {
@@ -359,40 +381,61 @@ export async function parseDocument(id: string): Promise<{
     throw new Error(`Unsupported file type: ${doc.fileType}`);
   }
 
+  onProgress?.("start", 0);
   await updateDocumentStatus(id, "parsing");
 
   try {
+    onProgress?.("read", 10);
     const filePath = path.join(UPLOAD_DIR, id);
     const buffer = await fs.readFile(filePath);
 
+    onProgress?.("parse", 30);
     const rawContent = await parseFileContent(buffer, doc.fileType);
 
     if (doc.rawContent === rawContent && doc.status === "parsed") {
+      onProgress?.("done", 100);
       await updateDocumentStatus(id, "parsed");
       return { rawContent, chunkCount: doc.chunkCount };
     }
 
-    const imageTypes = ["png", "jpg", "jpeg", "webp", "bmp"];
-    const isImage = imageTypes.includes(doc.fileType);
+    onProgress?.("split", 60);
+    const chunks = await splitContentToChunks(rawContent, doc.fileType);
 
-    let chunks: TextChunk[];
-    if (isImage) {
-      chunks = [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
-    } else {
-      const hasTable = containsTable(rawContent);
-      const semanticChunks = hasTable
-        ? null
-        : await splitTextSemantic(rawContent);
-      chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
-    }
+    onProgress?.("save", 80);
+    await prisma.$transaction(async (tx) => {
+      await tx.documentChunk.deleteMany({
+        where: { documentSourceId: id },
+      });
 
-    await replaceTextChunksAndIndex(id, chunks, { rawContent });
+      if (chunks.length > 0) {
+        await tx.documentChunk.createMany({
+          data: chunks.map((chunk: TextChunk, index: number) => ({
+            documentSourceId: id,
+            chunkIndex: index,
+            content: chunk.content,
+            charStart: chunk.charStart,
+            charEnd: chunk.charEnd,
+          })),
+        });
+      }
 
+      await tx.documentSource.update({
+        where: { id },
+        data: {
+          status: "parsed",
+          rawContent,
+          chunkCount: chunks.length,
+        },
+      });
+    });
+
+    onProgress?.("done", 100);
     return { rawContent, chunkCount: chunks.length };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown parse error";
     await updateDocumentStatus(id, "failed", { error: message });
+    onProgress?.("failed", 100);
     throw error;
   }
 }
@@ -403,19 +446,7 @@ export async function updateDocumentContent(id: string, rawContent: string) {
 
   if (doc.rawContent === rawContent) return doc;
 
-  const imageTypes = ["png", "jpg", "jpeg", "webp", "bmp"];
-  const isImage = imageTypes.includes(doc.fileType);
-
-  let chunks: TextChunk[];
-  if (isImage) {
-    chunks = [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
-  } else {
-    const hasTable = containsTable(rawContent);
-    const semanticChunks = hasTable
-      ? null
-      : await splitTextSemantic(rawContent);
-    chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
-  }
+  const chunks = await splitContentToChunks(rawContent, doc.fileType);
 
   await replaceTextChunksAndIndex(id, chunks, { rawContent });
 

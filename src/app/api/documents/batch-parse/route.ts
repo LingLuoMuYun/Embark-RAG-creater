@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { parseDocument } from "@/server/services/document.service";
+import { setProgress } from "@/lib/parse-progress";
 
 const batchParseSchema = z.object({
   ids: z.array(z.string().min(1)).min(1).max(100),
@@ -22,7 +23,9 @@ export async function POST(request: NextRequest) {
 
     for (const id of parsed.data.ids) {
       try {
-        await parseDocument(id);
+        await parseDocument(id, (stage, percent) => {
+          setProgress(id, stage, percent);
+        });
         results.push({ id, success: true });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Parse failed";

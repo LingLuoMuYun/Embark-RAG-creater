@@ -13,28 +13,17 @@ export default function DocumentsPage() {
   const router = useRouter();
   const [refreshKey, setRefreshKey] = useState(0);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [parseLoading, setParseLoading] = useState(false);
-  const [parseCount, setParseCount] = useState(0);
 
   const handleUploaded = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  const handleParse = useCallback(async (ids: string[]) => {
-    setParseLoading(true);
-    setParseCount(ids.length);
-    // 立即刷新列表，让"解析中"状态显示出来
-    setRefreshKey((k) => k + 1);
-    try {
-      await Promise.all(
-        ids.map((id) => fetch(`/api/documents/${id}/parse`, { method: "POST" }))
-      );
-    } catch {
-      // error handled by list refresh
-    } finally {
-      setParseLoading(false);
-      setRefreshKey((k) => k + 1);
-    }
+  const handleParse = useCallback((ids: string[]) => {
+    ids.forEach((id) =>
+      fetch(`/api/documents/${id}/parse`, { method: "POST" }).catch(() => {
+        // Network failure: list will show "parsing" until user retries
+      })
+    );
   }, []);
 
   const handlePreview = useCallback((id: string) => {
@@ -55,8 +44,7 @@ export default function DocumentsPage() {
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">上传文件</h2>
           <p className="text-sm text-gray-500 mb-3">
-            支持 .txt .md .csv .xlsx .docx .pdf .png .jpg .jpeg .webp .bmp
-            格式，最大 100MB
+            支持 .txt .md .csv .xlsx .doc .docx .pdf .ppt .pptx .png .jpg .jpeg .webp .bmp 格式，最大 100MB
           </p>
           <DocumentUploader onUploaded={handleUploaded} />
         </div>
@@ -79,12 +67,6 @@ export default function DocumentsPage() {
             onPreview={handlePreview}
           />
         </div>
-
-        {parseLoading && (
-          <div className="fixed bottom-6 right-6 rounded-lg bg-blue-600 px-4 py-3 text-sm text-white shadow-lg">
-            {parseCount > 1 ? "正在批量解析文档..." : "正在解析文档..."}
-          </div>
-        )}
 
         <DocumentPreview
           documentId={previewId}
