@@ -1,7 +1,7 @@
 import {
-  embedChunk,
+  embedChunks,
   getChunkEmbeddingText,
-  MOCK_EMBEDDING_MODEL,
+  getEmbeddingModel,
   type EmbeddingVector,
 } from "@/server/services/rag/embedding";
 import { prisma } from "@/lib/db";
@@ -22,40 +22,58 @@ export function computeChunkContentHash(chunk: KnowledgeChunk): string {
 
 /** 为单个 chunk 生成 embedding 并写入本地 SQLite/Prisma 索引。 */
 export async function indexChunk(chunk: KnowledgeChunk): Promise<ChunkEmbedding> {
-  const chunkEmbeddingInput = {
-    chunkId: chunk.id,
-    embedding: serializeEmbedding(embedChunk(chunk)),
-    embeddingModel: MOCK_EMBEDDING_MODEL,
-    contentHash: computeChunkContentHash(chunk),
-  };
-
-  const savedEmbedding = await prisma.chunkEmbedding.upsert({
-    where: {
-      chunkId: chunk.id,
-    },
-    create: chunkEmbeddingInput,
-    update: chunkEmbeddingInput,
-  });
-
-  return toChunkEmbedding(savedEmbedding);
+  const [savedEmbedding] = await indexChunks([chunk]);
+  return savedEmbedding;
 }
 
 /** 批量为 chunks 生成 embedding 并写入本地 SQLite/Prisma 索引。 */
 export async function indexChunks(
   chunks: KnowledgeChunk[]
 ): Promise<ChunkEmbedding[]> {
-  return Promise.all(chunks.map(indexChunk));
+  if (chunks.length === 0) return [];
+
+  const embeddingModel = getEmbeddingModel();
+  const embeddings = await embedChunks(chunks);
+  const records = chunks.map((chunk, index) => ({
+    chunkId: chunk.id,
+    embedding: serializeEmbedding(embeddings[index]),
+    embeddingModel,
+    contentHash: computeChunkContentHash(chunk),
+  }));
+
+  const savedEmbeddings = await prisma.$transaction(
+    records.map((record) =>
+      prisma.chunkEmbedding.upsert({
+        where: {
+          chunkId: record.chunkId,
+        },
+        create: record,
+        update: record,
+      })
+    )
+  );
+
+  return savedEmbeddings.map(toChunkEmbedding);
 }
 
 /** 删除指定 chunk 的本地 embedding 索引。 */
 export async function deleteChunkEmbedding(chunkId: string): Promise<boolean> {
+  const count = await deleteChunkEmbeddings([chunkId]);
+  return count > 0;
+}
+
+/** 批量删除指定 chunks 的本地 embedding 索引。 */
+export async function deleteChunkEmbeddings(chunkIds: string[]): Promise<number> {
+  const uniqueChunkIds = [...new Set(chunkIds)].filter(Boolean);
+  if (uniqueChunkIds.length === 0) return 0;
+
   const result = await prisma.chunkEmbedding.deleteMany({
     where: {
-      chunkId,
+      chunkId: { in: uniqueChunkIds },
     },
   });
 
-  return result.count > 0;
+  return result.count;
 }
 
 /** 读取指定 chunkId 的本地 embedding 索引。 */
@@ -75,44 +93,66 @@ export async function getChunkEmbedding(
 export async function reindexOutdatedChunks(
   chunks: KnowledgeChunk[]
 ): Promise<ChunkEmbedding[]> {
-  const outdatedChunks: KnowledgeChunk[] = [];
+  const freshEmbeddingMap = await getFreshChunkEmbeddingMap(chunks);
+  return indexChunks(
+    chunks.filter((chunk) => !freshEmbeddingMap.has(chunk.id))
+  );
+}
 
+/** 只读取当前可用的 chunk embedding；缺失或过期时返回 undefined。 */
+export async function getFreshChunkEmbedding(
+  chunk: KnowledgeChunk
+): Promise<ChunkEmbedding | undefined> {
+  const currentEmbedding = await getChunkEmbedding(chunk.id);
+  if (!currentEmbedding) return undefined;
+
+  return isChunkEmbeddingFresh(chunk, currentEmbedding)
+    ? currentEmbedding
+    : undefined;
+}
+
+/** 批量读取 fresh embedding，供检索阶段使用；不会在查询时重建向量。 */
+export async function getFreshChunkEmbeddingMap(
+  chunks: KnowledgeChunk[]
+): Promise<Map<string, ChunkEmbedding>> {
+  if (chunks.length === 0) return new Map();
+
+  const chunkIds = chunks.map((chunk) => chunk.id);
+  const currentModel = getEmbeddingModel();
+  const embeddings = await prisma.chunkEmbedding.findMany({
+    where: {
+      chunkId: { in: chunkIds },
+      embeddingModel: currentModel,
+    },
+  });
+  const embeddingMap = new Map(
+    embeddings.map((embedding) => [
+      embedding.chunkId,
+      toChunkEmbedding(embedding),
+    ])
+  );
+
+  const freshEmbeddingMap = new Map<string, ChunkEmbedding>();
   for (const chunk of chunks) {
-    if (!(await isChunkEmbeddingFresh(chunk))) {
-      outdatedChunks.push(chunk);
+    const embedding = embeddingMap.get(chunk.id);
+    if (embedding && isChunkEmbeddingFresh(chunk, embedding)) {
+      freshEmbeddingMap.set(chunk.id, embedding);
     }
   }
 
-  return indexChunks(outdatedChunks);
-}
-
-/** 读取当前可用的 chunk embedding，缺失或过期时自动重建。 */
-export async function getOrIndexChunkEmbedding(
-  chunk: KnowledgeChunk
-): Promise<ChunkEmbedding> {
-  const existingEmbedding = await getChunkEmbedding(chunk.id);
-
-  if (
-    existingEmbedding &&
-    (await isChunkEmbeddingFresh(chunk, existingEmbedding))
-  ) {
-    return existingEmbedding;
-  }
-
-  return indexChunk(chunk);
+  return freshEmbeddingMap;
 }
 
 /** 判断已有 embedding 是否仍匹配当前 chunk 内容和 embedding 模型。 */
-export async function isChunkEmbeddingFresh(
+export function isChunkEmbeddingFresh(
   chunk: KnowledgeChunk,
   chunkEmbedding?: ChunkEmbedding
-): Promise<boolean> {
-  const currentEmbedding = chunkEmbedding ?? (await getChunkEmbedding(chunk.id));
-  if (!currentEmbedding) return false;
+): boolean {
+  if (!chunkEmbedding) return false;
 
   return (
-    currentEmbedding.embeddingModel === MOCK_EMBEDDING_MODEL &&
-    currentEmbedding.contentHash === computeChunkContentHash(chunk)
+    chunkEmbedding.embeddingModel === getEmbeddingModel() &&
+    chunkEmbedding.contentHash === computeChunkContentHash(chunk)
   );
 }
 

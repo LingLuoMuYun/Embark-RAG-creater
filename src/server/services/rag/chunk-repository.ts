@@ -1,7 +1,10 @@
 import { mockKnowledgeChunks } from "@/server/services/rag/mock-data";
+import {
+  getRetrievableChunkWhere,
+  mapDocumentChunkToKnowledgeChunk,
+} from "@/server/services/rag/chunk-mapper";
 import type {
   KnowledgeChunk,
-  KnowledgeSourceType,
   RagRetrieveScope,
 } from "@/features/rag/types";
 
@@ -25,9 +28,9 @@ export async function listKnowledgeChunks(
   return mockKnowledgeChunks;
 }
 
-/** 根据环境变量决定读取 mock 数据还是读取真实数据库。 */
+/** 默认读取真实数据库；需要演示 mock 数据时显式设置 RAG_CHUNK_SOURCE=mock。 */
 function getChunkSource(): ChunkSource {
-  return process.env.RAG_CHUNK_SOURCE === "database" ? "database" : "mock";
+  return process.env.RAG_CHUNK_SOURCE === "mock" ? "mock" : "database";
 }
 
 /** 从 Prisma 读取真实 chunk，并适配成 RAG 统一的 KnowledgeChunk 字段。 */
@@ -35,13 +38,26 @@ async function listDatabaseKnowledgeChunks(
   scope: RagRetrieveScope
 ): Promise<KnowledgeChunk[]> {
   const { prisma } = await import("@/lib/db");
+  const scopedKnowledgeBaseIds = new Set(scope.knowledgeBaseIds);
 
   const chunks = await prisma.documentChunk.findMany({
     where: {
       chunkStatus: "active",
+      content: { not: "" },
+      ...getRetrievableChunkWhere(),
       documentSource: {
-        knowledgeBases: {
-          some: { knowledgeBaseId: { in: scope.knowledgeBaseIds } },
+        is: {
+          status: "parsed",
+          activeStatus: "active",
+          knowledgeBases: {
+            some: {
+              knowledgeBaseId: { in: scope.knowledgeBaseIds },
+              status: "active",
+              knowledgeBase: {
+                status: "active",
+              },
+            },
+          },
         },
       },
       documentSourceId: scope.knowledgeIds
@@ -53,7 +69,27 @@ async function listDatabaseKnowledgeChunks(
     include: {
       documentSource: {
         include: {
-          knowledgeBases: true,
+          knowledgeBases: {
+            where: {
+              knowledgeBaseId: { in: scope.knowledgeBaseIds },
+              status: "active",
+              knowledgeBase: {
+                status: "active",
+              },
+            },
+            orderBy: {
+              sortOrder: "asc",
+            },
+            include: {
+              knowledgeBase: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -68,38 +104,25 @@ async function listDatabaseKnowledgeChunks(
   });
 
   return chunks.flatMap((chunk) => {
-    const kbid = chunk.documentSource?.knowledgeBases?.[0]?.knowledgeBaseId;
-    if (!kbid) return [];
+    const document = chunk.documentSource;
+    const relation = document?.knowledgeBases.find((item) =>
+      scopedKnowledgeBaseIds.has(item.knowledgeBaseId)
+    );
 
-    return {
-      id: chunk.id,
-      knowledgeBaseId: kbid,
-      knowledgeId: chunk.documentSourceId ?? chunk.id,
-      title: chunk.documentSource?.title ?? chunk.title ?? "",
-      content: chunk.content,
-      status: chunk.chunkStatus === "active" ? "available" : "disabled",
-      sourceType: normalizeSourceType(chunk.documentSource?.sourceType ?? "import"),
-      chunkType: chunk.chunkType === "knowledge" ? "summary" : "text",
-      chunkIndex: chunk.chunkIndex,
-      metadata: {
-        fileName: chunk.documentSource?.fileName,
-        fileUrl: chunk.documentSource?.fileUrl,
-        mimeType: chunk.documentSource?.mimeType,
-        fileSize: chunk.documentSource?.fileSize,
-        startIndex: chunk.charStart,
-        endIndex: chunk.charEnd,
-        parseStatus: chunk.documentSource?.status,
+    if (!document || !relation) return [];
+
+    return mapDocumentChunkToKnowledgeChunk(
+      {
+        ...chunk,
+        documentSource: {
+          ...document,
+          knowledgeBases: [relation],
+        },
       },
-      createdAt: chunk.createdAt.toISOString(),
-      updatedAt: chunk.updatedAt.toISOString(),
-    };
+      {
+        knowledgeBaseId: relation.knowledgeBaseId,
+        knowledgeBaseName: relation.knowledgeBase.name,
+      }
+    );
   });
-}
-
-/** 将入库侧 sourceType 适配成 RAG 对接文档约定的来源类型。 */
-function normalizeSourceType(sourceType: string): KnowledgeSourceType {
-  if (sourceType === "manual") return "manual";
-  if (sourceType === "file") return "file";
-  if (sourceType === "wiki") return "wiki";
-  return "import";
 }

@@ -1,104 +1,152 @@
 import type { KnowledgeChunk } from "@/features/rag/types";
 
-const MOCK_EMBEDDING_DIMENSION = 64;
+export const DEFAULT_EMBEDDING_MODEL = "voyage-3.5";
+const VOYAGE_EMBEDDINGS_ENDPOINT = "https://api.voyageai.com/v1/embeddings";
+const VOYAGE_BATCH_SIZE = 64;
 
-export const MOCK_EMBEDDING_MODEL = "mock-hash-embedding-v1";
-
-/**
- * embedding 生成模块。
- *
- * 职责：
- * 1. 为 query 和 chunk 生成稳定的 mock 向量。
- * 2. 保持和未来真实 embedding API 相同的调用入口。
- * 3. 让当前 RAG 检索链路在没有 API Key 的情况下也能完整跑通。
- */
 export type EmbeddingVector = number[];
+type EmbeddingInputType = "query" | "document";
 
-/**
- * 稳定的 mock query embedding。
- *
- * 这里不依赖外部模型，保证同一输入每次得到同一向量；
- * 后续接真实 embedding 模型时保留函数签名即可。
- */
-export function embedQuery(query: string): EmbeddingVector {
-  return embedText(query);
+type VoyageEmbeddingItem = {
+  embedding?: unknown;
+  index?: number;
+};
+
+type VoyageEmbeddingResponse = {
+  data?: VoyageEmbeddingItem[];
+  model?: string;
+};
+
+export async function embedQuery(query: string): Promise<EmbeddingVector> {
+  const [embedding] = await embedTexts([query], "query");
+  return embedding;
 }
 
-/**
- * 稳定的 mock chunk embedding。
- *
- * 初版把标题、摘要、正文和 metadata 合成索引文本，标题和摘要重复一次提高权重。
- */
-export function embedChunk(chunk: KnowledgeChunk): EmbeddingVector {
-  return embedText(getChunkEmbeddingText(chunk));
+export async function embedChunks(
+  chunks: KnowledgeChunk[]
+): Promise<EmbeddingVector[]> {
+  return embedTexts(chunks.map(getChunkEmbeddingText), "document");
+}
+
+export function getEmbeddingModel() {
+  return process.env.VOYAGE_EMBEDDING_MODEL?.trim() || DEFAULT_EMBEDDING_MODEL;
 }
 
 /** 构建 chunk embedding 使用的稳定文本输入。 */
 export function getChunkEmbeddingText(chunk: KnowledgeChunk): string {
-  const metadataText = chunk.metadata ? JSON.stringify(chunk.metadata) : "";
+  const tagText = chunk.tagIds?.join("\n") ?? "";
 
   return [
     chunk.title,
     chunk.title,
     chunk.summary ?? "",
     chunk.summary ?? "",
+    chunk.categoryId ?? "",
+    tagText,
+    chunk.chunkType,
     chunk.content,
-    metadataText,
   ].join("\n");
 }
 
-/** 将任意文本转换成固定维度的 mock embedding 向量。 */
-function embedText(text: string): EmbeddingVector {
-  const vector = new Array<number>(MOCK_EMBEDDING_DIMENSION).fill(0);
-  const tokens = tokenize(text);
+async function embedTexts(
+  texts: string[],
+  inputType: EmbeddingInputType
+): Promise<EmbeddingVector[]> {
+  if (texts.length === 0) return [];
 
-  for (const token of tokens) {
-    const hash = hashToken(token);
-    const index = Math.abs(hash) % MOCK_EMBEDDING_DIMENSION;
-    vector[index] += 1;
+  const embeddings: EmbeddingVector[] = [];
+  for (let start = 0; start < texts.length; start += VOYAGE_BATCH_SIZE) {
+    const batch = texts.slice(start, start + VOYAGE_BATCH_SIZE);
+    embeddings.push(...(await requestVoyageEmbeddings(batch, inputType)));
   }
 
-  return normalizeVector(vector);
+  return embeddings;
 }
 
-/** 轻量分词：英文/数字按词，中文按相邻双字 bigram。 */
-function tokenize(input: string): string[] {
-  const normalized = input.toLowerCase().trim();
-  const asciiTokens = normalized.match(/[a-z0-9_]+/g) ?? [];
-  const cjkText = Array.from(normalized)
-    .filter((char) => /[\u4e00-\u9fff]/.test(char))
-    .join("");
-  const cjkTokens: string[] = [];
-
-  if (cjkText.length === 1) {
-    cjkTokens.push(cjkText);
+async function requestVoyageEmbeddings(
+  texts: string[],
+  inputType: EmbeddingInputType
+): Promise<EmbeddingVector[]> {
+  const apiKey = process.env.VOYAGE_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "VOYAGE_API_KEY 未配置，无法生成 RAG 向量。请配置后重试。"
+    );
   }
 
-  for (let index = 0; index < cjkText.length - 1; index += 1) {
-    cjkTokens.push(cjkText.slice(index, index + 2));
+  const response = await fetch(VOYAGE_EMBEDDINGS_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      input: texts,
+      model: getEmbeddingModel(),
+      input_type: inputType,
+    }),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Voyage embeddings API 调用失败：HTTP ${response.status} ${truncate(
+        responseText
+      )}`
+    );
   }
 
-  return [...asciiTokens, ...cjkTokens];
+  const parsed = parseVoyageResponse(responseText);
+  const items = parsed.data;
+  if (!items || items.length !== texts.length) {
+    throw new Error(
+      `Voyage embeddings API 返回数量异常：expected ${texts.length}, received ${
+        items?.length ?? 0
+      }`
+    );
+  }
+
+  return normalizeVoyageItems(items, texts.length);
 }
 
-/** 将 token 稳定映射到固定维度向量中的某个位置。 */
-function hashToken(token: string): number {
-  let hash = 0;
-
-  for (let index = 0; index < token.length; index += 1) {
-    hash = (hash << 5) - hash + token.charCodeAt(index);
-    hash |= 0;
+function parseVoyageResponse(responseText: string): VoyageEmbeddingResponse {
+  try {
+    return JSON.parse(responseText) as VoyageEmbeddingResponse;
+  } catch {
+    throw new Error("Voyage embeddings API 返回了无法解析的 JSON。");
   }
-
-  return hash;
 }
 
-/** 对向量做 L2 归一化，方便后续计算余弦相似度。 */
-function normalizeVector(vector: EmbeddingVector): EmbeddingVector {
-  const magnitude = Math.sqrt(
-    vector.reduce((sum, value) => sum + value * value, 0)
-  );
+function normalizeVoyageItems(
+  items: VoyageEmbeddingItem[],
+  expectedLength: number
+): EmbeddingVector[] {
+  const orderedItems = [...items].sort((a, b) => {
+    if (typeof a.index !== "number" || typeof b.index !== "number") return 0;
+    return a.index - b.index;
+  });
 
-  if (magnitude === 0) return vector;
-  return vector.map((value) => value / magnitude);
+  return orderedItems.map((item, index) => {
+    if (!Array.isArray(item.embedding)) {
+      throw new Error(`Voyage embeddings API 第 ${index + 1} 条结果缺少向量。`);
+    }
+
+    const embedding = item.embedding.filter(
+      (value): value is number => typeof value === "number"
+    );
+    if (embedding.length === 0) {
+      throw new Error(`Voyage embeddings API 第 ${index + 1} 条结果向量为空。`);
+    }
+    if (orderedItems.length !== expectedLength) {
+      throw new Error("Voyage embeddings API 返回结果数量不匹配。");
+    }
+
+    return embedding;
+  });
+}
+
+function truncate(value: string) {
+  const trimmedValue = value.trim();
+  if (trimmedValue.length <= 500) return trimmedValue;
+  return `${trimmedValue.slice(0, 500)}...`;
 }

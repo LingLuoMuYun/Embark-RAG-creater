@@ -1,5 +1,5 @@
 import type { EmbeddingVector } from "@/server/services/rag/embedding";
-import { getOrIndexChunkEmbedding } from "@/server/services/rag/vector-index-repository";
+import { getFreshChunkEmbeddingMap } from "@/server/services/rag/vector-index-repository";
 import type { KnowledgeChunk } from "@/features/rag/types";
 
 /**
@@ -43,27 +43,28 @@ export function cosineSimilarity(
 /**
  * 在内存中执行向量检索。
  *
- * 当前优先读取本地 embedding 索引；
- * 当索引缺失或内容过期时，会用 mock embedding 重建并写回索引。
+ * 当前只读取本地 fresh embedding 索引；
+ * 索引缺失或内容过期的 chunk 不参与 vector 召回。
  */
 export async function searchByVector(
   chunks: KnowledgeChunk[],
   queryVector: EmbeddingVector
 ): Promise<VectorSearchResult[]> {
-  const scoredResults = await Promise.all(
-    chunks.map(async (chunk) => ({
+  const embeddingMap = await getFreshChunkEmbeddingMap(chunks);
+  const scoredResults = chunks.flatMap((chunk) => {
+    const chunkEmbedding = embeddingMap.get(chunk.id);
+    if (!chunkEmbedding) return [];
+
+    return {
       chunk,
       score: Number(
         Math.max(
           0,
-          cosineSimilarity(
-            queryVector,
-            (await getOrIndexChunkEmbedding(chunk)).embedding
-          )
+          cosineSimilarity(queryVector, chunkEmbedding.embedding)
         ).toFixed(4)
       ),
-    }))
-  );
+    };
+  });
 
   return scoredResults
     .sort((a, b) => b.score - a.score)

@@ -4,10 +4,10 @@ import { z } from "zod";
 import { fetchFeishuDocContent } from "@/lib/feishu";
 import {
   createDocument,
+  replaceTextChunksAndIndex,
   updateDocumentStatus,
 } from "@/server/services/document.service";
 import { splitTextIntoChunks } from "@/lib/text-splitter";
-import { prisma } from "@/lib/db";
 
 const importSchema = z.object({
   url: z.string().min(1, "请输入飞书文档链接"),
@@ -47,28 +47,8 @@ export async function POST(request: NextRequest) {
     // 2. 机械切分（飞书文档为纯文本，无需语义分段）
     const chunks = splitTextIntoChunks(content);
 
-    // 3. 保存 chunks
-    if (chunks.length > 0) {
-      await prisma.documentChunk.createMany({
-        data: chunks.map((chunk, index) => ({
-          documentSourceId: doc.id,
-          chunkIndex: index,
-          content: chunk.content,
-          charStart: chunk.charStart,
-          charEnd: chunk.charEnd,
-        })),
-      });
-    }
-
-    // 4. 标记已解析
-    await prisma.documentSource.update({
-      where: { id: doc.id },
-      data: {
-        status: "parsed",
-        rawContent: content,
-        chunkCount: chunks.length,
-      },
-    });
+    // 3. 保存 chunks 并建立本地向量索引
+    await replaceTextChunksAndIndex(doc.id, chunks, { rawContent: content });
 
     return NextResponse.json({
       success: true,

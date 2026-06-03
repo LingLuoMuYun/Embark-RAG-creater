@@ -10,8 +10,11 @@ import {
 } from "@/lib/ai-extract";
 import { renderChunkUserPrompt } from "@/lib/prompts/extraction";
 import type { CandidateKnowledgeItem } from "@/features/extraction/extraction.validation";
-import { indexChunks } from "@/server/services/rag/vector-index-repository";
-import type { KnowledgeChunk } from "@/features/rag/types";
+import { mapDocumentChunkToKnowledgeChunk } from "@/server/services/rag/chunk-mapper";
+import {
+  deleteChunkEmbeddings,
+  indexChunks,
+} from "@/server/services/rag/vector-index-repository";
 
 // ===== 类型 =====
 
@@ -238,6 +241,7 @@ export async function deleteCandidateById(id: string) {
     where: { id, chunkType: "knowledge" },
   });
   if (!existing) return null;
+  await deleteChunkEmbeddings([id]);
   await prisma.documentChunk.update({
     where: { id },
     data: { reviewStatus: "rejected", chunkStatus: "disabled" },
@@ -270,7 +274,7 @@ export async function updateCandidate(
   });
   if (!existing) return null;
 
-  return prisma.documentChunk.update({
+  const updatedChunk = await prisma.documentChunk.update({
     where: { id },
     data: {
       ...(data.title !== undefined && { title: data.title }),
@@ -286,42 +290,79 @@ export async function updateCandidate(
       }),
       updatedAt: new Date(),
     },
+    include: {
+      documentSource: {
+        include: {
+          knowledgeBases: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              knowledgeBase: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
+
+  if (
+    updatedChunk.reviewStatus === "confirmed" &&
+    updatedChunk.chunkStatus === "active"
+  ) {
+    try {
+      await indexChunks([mapDocumentChunkToKnowledgeChunk(updatedChunk)]);
+    } catch (error) {
+      await deleteChunkEmbeddings([id]);
+      await prisma.documentChunk.update({
+        where: { id },
+        data: { chunkStatus: "disabled" },
+      });
+      throw error;
+    }
+  } else {
+    await deleteChunkEmbeddings([id]);
+  }
+
+  return updatedChunk;
 }
 
 // ===== 确认入库（生成 embedding） =====
 
 export async function confirmCandidates(ids: string[], knowledgeBaseIds: string[]) {
-  // 1. 更新状态为 confirmed + active
-  await prisma.documentChunk.updateMany({
+  const pendingChunks = await prisma.documentChunk.findMany({
     where: {
       id: { in: ids },
       chunkType: "knowledge",
       reviewStatus: "pending",
     },
-    data: {
-      reviewStatus: "confirmed",
-      chunkStatus: "active",
-      updatedAt: new Date(),
-    },
-  });
-
-  // 2. 查询更新后的 chunks 用于生成 embedding
-  const confirmedChunks = await prisma.documentChunk.findMany({
-    where: {
-      id: { in: ids },
-      chunkType: "knowledge",
-      reviewStatus: "confirmed",
-    },
     include: {
       documentSource: {
-        include: { knowledgeBases: true },
+        include: {
+          knowledgeBases: {
+            include: {
+              knowledgeBase: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
       },
     },
   });
 
-  // 3. 确保文档已绑定到选中的知识库（跳过已存在的关联）
-  const docIds = [...new Set(confirmedChunks.map((c) => c.documentSourceId).filter((id): id is string => id !== null))];
+  if (pendingChunks.length === 0) return 0;
+
+  // 确保文档已绑定到选中的知识库（跳过已存在的关联）。
+  const docIds = [...new Set(pendingChunks.map((c) => c.documentSourceId).filter((id): id is string => id !== null))];
   if (docIds.length > 0) {
     const existingRelations = await prisma.knowledgeBaseDocument.findMany({
       where: {
@@ -346,32 +387,63 @@ export async function confirmCandidates(ids: string[], knowledgeBaseIds: string[
     }
   }
 
-  // 4. 映射为 RAG KnowledgeChunk 域类型并生成 embedding
-  if (confirmedChunks.length > 0) {
-    const ragChunks: KnowledgeChunk[] = confirmedChunks.map((chunk) => ({
-      id: chunk.id,
-      knowledgeBaseId: knowledgeBaseIds[0],
-      knowledgeId: chunk.documentSourceId ?? chunk.id,
-      title: chunk.title ?? chunk.documentSource?.title ?? "",
-      content: chunk.content,
-      summary: chunk.title ?? undefined,
-      status: "available",
-      sourceType: "import",
-      chunkType: "summary",
-      chunkIndex: chunk.chunkIndex,
-      metadata: {
-        suggestedCategory: chunk.suggestedCategory,
-        suggestedTags: chunk.suggestedTags,
-        reviewStatus: chunk.reviewStatus,
+  const chunksForIndex = await prisma.documentChunk.findMany({
+    where: {
+      id: { in: pendingChunks.map((chunk) => chunk.id) },
+      chunkType: "knowledge",
+      reviewStatus: "pending",
+    },
+    include: {
+      documentSource: {
+        include: {
+          knowledgeBases: {
+            where: {
+              knowledgeBaseId: { in: knowledgeBaseIds },
+            },
+            orderBy: { sortOrder: "asc" },
+            include: {
+              knowledgeBase: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
       },
-      createdAt: chunk.createdAt.toISOString(),
-      updatedAt: chunk.updatedAt.toISOString(),
-    }));
+    },
+  });
+  const ragChunks = chunksForIndex.map((chunk) =>
+    mapDocumentChunkToKnowledgeChunk(chunk, {
+      knowledgeBaseId: knowledgeBaseIds[0],
+      knowledgeBaseName:
+        chunk.documentSource?.knowledgeBases[0]?.knowledgeBase.name,
+    })
+  );
 
+  try {
     await indexChunks(ragChunks);
+  } catch (error) {
+    await deleteChunkEmbeddings(pendingChunks.map((chunk) => chunk.id));
+    throw error;
   }
 
-  return confirmedChunks.length;
+  await prisma.documentChunk.updateMany({
+    where: {
+      id: { in: pendingChunks.map((chunk) => chunk.id) },
+      chunkType: "knowledge",
+      reviewStatus: "pending",
+    },
+    data: {
+      reviewStatus: "confirmed",
+      chunkStatus: "active",
+      updatedAt: new Date(),
+    },
+  });
+
+  return pendingChunks.length;
 }
 
 // ===== 映射辅助 =====

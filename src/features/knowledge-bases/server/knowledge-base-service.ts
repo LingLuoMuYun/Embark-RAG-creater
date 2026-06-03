@@ -1,5 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { replaceTextChunksAndIndex } from "@/server/services/document.service";
 
 import { badRequest, conflict, notFound } from "./errors";
 import { mapKnowledgeBaseListItem, mapKnowledgeBaseTree } from "./mappers";
@@ -122,18 +123,6 @@ async function createDocumentWithChunks(
       status: input.rawContent ? "parsed" : "pending",
       activeStatus: input.activeStatus ?? "active",
       error: input.error,
-      chunks: input.chunks
-        ? {
-            create: input.chunks.map((chunk) => ({
-              content: chunk.content,
-              chunkIndex: chunk.chunkIndex,
-              embedding: chunk.embedding,
-              chunkStatus: chunk.chunkStatus ?? "active",
-              charStart: chunk.startIndex ?? 0,
-              charEnd: chunk.endIndex ?? chunk.content.length,
-            })),
-          }
-        : undefined,
     },
     select: { id: true },
   });
@@ -143,7 +132,7 @@ export async function createKnowledgeBaseService(
   input: CreateKnowledgeBaseInput
 ) {
   try {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const existingDocumentIds = input.documentIds
         ? await assertDocumentIdsExist(tx, input.documentIds)
         : [];
@@ -201,8 +190,37 @@ export async function createKnowledgeBaseService(
         });
       }
 
-      return mapKnowledgeBaseTree(item);
+      return {
+        item,
+        createdDocuments,
+      };
     });
+
+    const createdInputDocuments = input.documents ?? [];
+    for (let index = 0; index < result.createdDocuments.length; index += 1) {
+      const sourceInput = createdInputDocuments[index];
+      if (!sourceInput?.chunks || sourceInput.chunks.length === 0) continue;
+
+      await replaceTextChunksAndIndex(
+        result.createdDocuments[index].id,
+        sourceInput.chunks.map((chunk) => ({
+          content: chunk.content,
+          charStart: chunk.startIndex ?? 0,
+          charEnd: chunk.endIndex ?? chunk.content.length,
+        })),
+        { rawContent: sourceInput.rawContent }
+      );
+    }
+
+    if (
+      result.createdDocuments.some(
+        (_, index) => createdInputDocuments[index]?.chunks?.length
+      )
+    ) {
+      return getKnowledgeBaseTreeService(result.item.id);
+    }
+
+    return mapKnowledgeBaseTree(result.item);
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
