@@ -16,20 +16,22 @@ interface Props {
   candidates: Candidate[];
   onConfirm: (ids: string[]) => void;
   onReject: (id: string) => void;
+  onDelete: (id: string) => void;
+  onBatchDelete: (ids: string[]) => void;
   onEdit: (candidate: Candidate) => void;
   onRetry: () => void;
   loading: boolean;
-  selectedKbCount?: number;
 }
 
 export default function CandidateList({
   candidates,
   onConfirm,
   onReject,
+  onDelete,
+  onBatchDelete,
   onEdit,
   onRetry,
   loading,
-  selectedKbCount = 0,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -87,15 +89,23 @@ export default function CandidateList({
         </div>
 
         <div className="flex gap-2 items-center">
-          {selectedKbCount === 0 && (
-            <span className="text-xs text-amber-600">请先在页面顶部选择目标知识库</span>
-          )}
           <button
             onClick={handleConfirm}
-            disabled={selected.size === 0 || loading || selectedKbCount === 0}
+            disabled={selected.size === 0 || loading}
             className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             确认入库 ({selected.size})
+          </button>
+          <button
+            onClick={() => {
+              if (selected.size === 0) return;
+              onBatchDelete(Array.from(selected));
+              setSelected(new Set());
+            }}
+            disabled={selected.size === 0 || loading}
+            className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            批量删除 ({selected.size})
           </button>
           <button
             onClick={onRetry}
@@ -116,6 +126,7 @@ export default function CandidateList({
             onToggle={toggle}
             onEdit={onEdit}
             onReject={onReject}
+            onDelete={onDelete}
           />
         ))}
       </div>

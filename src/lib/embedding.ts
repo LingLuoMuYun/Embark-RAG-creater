@@ -8,10 +8,7 @@ export interface EmbeddingResult {
 
 export async function embedSingle(text: string): Promise<number[]> {
   const results = await batchEmbedTexts([text]);
-  if (!results[0]?.embedding) {
-    throw new Error("Embedding API returned empty result");
-  }
-  return results[0].embedding;
+  return results[0]?.embedding ?? [];
 }
 
 export async function batchEmbedTexts(
@@ -57,7 +54,6 @@ export async function batchEmbedTexts(
     allResults.push(...embeddings);
   }
 
-  allResults.sort((a, b) => a.textIndex - b.textIndex);
   return allResults;
 }
 

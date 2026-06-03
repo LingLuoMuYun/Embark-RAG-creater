@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 
 const BASE_URL = "https://open.feishu.cn/open-apis";
 
@@ -9,10 +8,11 @@ interface AuthResult {
   tenant_access_token?: string;
 }
 
-const debugBodySchema = z.object({
-  documentId: z.string().optional(),
-  url: z.string().optional(),
-});
+interface ApiResult {
+  code?: number;
+  msg?: string;
+  data?: Record<string, unknown>;
+}
 
 export async function POST(request: NextRequest) {
   const results: Record<string, unknown> = {};
@@ -38,24 +38,13 @@ export async function POST(request: NextRequest) {
     results.hasToken = !!tokenData.tenant_access_token;
 
     if (!tokenData.tenant_access_token) {
-      return NextResponse.json(
-        { success: false, error: "鉴权失败" },
-        { status: 401 }
-      );
+      return NextResponse.json({ success: false, error: "鉴权失败", results });
     }
 
     const token = tokenData.tenant_access_token;
     const body = await request.json().catch(() => ({}));
-    const parsed = debugBodySchema.safeParse(body);
-
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
-    }
-
-    const docId = parsed.data.documentId ?? parsed.data.url ?? "";
+    const docId = body.documentId ?? body.url ?? "";
+    results.input = docId;
 
     if (!docId) {
       return NextResponse.json({
@@ -74,7 +63,9 @@ export async function POST(request: NextRequest) {
       const res = await fetch(`${BASE_URL}/docx/v1/documents/${extractedId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      const data: ApiResult = await res.json().catch(() => ({}));
       results.docxInfoStatus = res.status;
+      results.docxInfo = data;
     }
 
     // 测试 raw_content 接口
@@ -82,8 +73,9 @@ export async function POST(request: NextRequest) {
       const res = await fetch(`${BASE_URL}/docx/v1/documents/${extractedId}/raw_content`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      const data: ApiResult = await res.json().catch(() => ({}));
       results.rawContentStatus = res.status;
-      results.hasContent = res.ok;
+      results.rawContent = data;
     }
 
     return NextResponse.json({ success: true, results });
@@ -91,6 +83,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : String(error),
+      results,
     });
   }
 }

@@ -20,20 +20,42 @@ function formatDate(value?: string) {
 type AssignmentDocumentItemProps = {
   document: RagDoc;
   kind: "selected" | "available";
+  expanded?: boolean;
+  highlightedChunkId?: string | null;
+  highlightedCategory?: string;
+  highlightedTag?: string;
+  searchKeyword?: string;
   onMove: (documentId: string) => void;
+  onToggleExpanded?: (documentId: string) => void;
 };
 
 export function AssignmentDocumentItem({
   document,
   kind,
+  expanded,
+  highlightedChunkId,
+  highlightedCategory,
+  highlightedTag,
+  searchKeyword,
   onMove,
+  onToggleExpanded,
 }: AssignmentDocumentItemProps) {
-  const [expanded, setExpanded] = React.useState(false);
+  const [internalExpanded, setInternalExpanded] = React.useState(false);
   const chunks = document.chunks ?? [];
   const canShowChunks = kind === "selected";
+  const isExpanded = expanded ?? internalExpanded;
+
+  const toggleExpanded = () => {
+    if (onToggleExpanded) {
+      onToggleExpanded(document.id);
+      return;
+    }
+
+    setInternalExpanded((current) => !current);
+  };
 
   return (
-    <article className="rounded-md border bg-background p-3">
+    <article id={`document-${document.id}`} className="rounded-md border bg-background p-3">
       <div className="grid gap-3 md:grid-cols-[1fr_auto]">
         <div className="min-w-0">
           <div className="flex items-start gap-3">
@@ -77,9 +99,9 @@ export function AssignmentDocumentItem({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setExpanded((current) => !current)}
+              onClick={toggleExpanded}
             >
-              {expanded ? (
+              {isExpanded ? (
                 <ChevronDown data-icon="inline-start" />
               ) : (
                 <ChevronRight data-icon="inline-start" />
@@ -97,9 +119,15 @@ export function AssignmentDocumentItem({
           </Button>
         </div>
       </div>
-      {canShowChunks && expanded ? (
+      {canShowChunks && isExpanded ? (
         <div className="mt-3 border-t pt-3">
-          <DocumentChunkList chunks={chunks} />
+          <DocumentChunkList
+            chunks={chunks}
+            highlightedChunkId={highlightedChunkId}
+            highlightedCategory={highlightedCategory}
+            highlightedTag={highlightedTag}
+            searchKeyword={searchKeyword}
+          />
         </div>
       ) : null}
     </article>

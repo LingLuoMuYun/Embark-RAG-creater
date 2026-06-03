@@ -37,25 +37,8 @@ const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
 // ========== Helpers ==========
 
-const IMAGE_TYPES = ["png", "jpg", "jpeg", "webp", "bmp"];
-
 function containsTable(text: string): boolean {
-  // Must have a header row, separator row, and at least one data row
-  return /^\|.+\|\n\|[-| :]+\|\n\|.+\|/m.test(text);
-}
-
-async function splitContentToChunks(
-  rawContent: string,
-  fileType: string
-): Promise<TextChunk[]> {
-  if (IMAGE_TYPES.includes(fileType)) {
-    return [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
-  }
-  const hasTable = containsTable(rawContent);
-  const semanticChunks = hasTable
-    ? null
-    : await splitTextSemantic(rawContent);
-  return semanticChunks ?? splitTextIntoChunks(rawContent);
+  return /^\|.+\|$/m.test(text);
 }
 
 async function ensureUploadDir(): Promise<void> {
@@ -345,17 +328,15 @@ export async function deleteDocument(id: string) {
   const doc = await prisma.documentSource.findUnique({ where: { id } });
   if (!doc) return null;
 
-  await deleteEmbeddingsForDocumentChunks(id);
-  await prisma.documentSource.delete({ where: { id } });
-
   const filePath = path.join(UPLOAD_DIR, doc.id);
   try {
     await fs.unlink(filePath);
   } catch {
-    // file may not exist on disk; DB record already deleted, orphan file is harmless
+    // file may not exist on disk
   }
 
   await deleteEmbeddingsForDocumentChunks(id);
+  await prisma.documentSource.delete({ where: { id } });
   return doc;
 }
 
@@ -399,35 +380,22 @@ export async function parseDocument(
     }
 
     onProgress?.("split", 60);
-    const chunks = await splitContentToChunks(rawContent, doc.fileType);
+    const imageTypes = ["png", "jpg", "jpeg", "webp", "bmp"];
+    const isImage = imageTypes.includes(doc.fileType);
+
+    let chunks: TextChunk[];
+    if (isImage) {
+      chunks = [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
+    } else {
+      const hasTable = containsTable(rawContent);
+      const semanticChunks = hasTable
+        ? null
+        : await splitTextSemantic(rawContent);
+      chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
+    }
 
     onProgress?.("save", 80);
-    await prisma.$transaction(async (tx) => {
-      await tx.documentChunk.deleteMany({
-        where: { documentSourceId: id },
-      });
-
-      if (chunks.length > 0) {
-        await tx.documentChunk.createMany({
-          data: chunks.map((chunk: TextChunk, index: number) => ({
-            documentSourceId: id,
-            chunkIndex: index,
-            content: chunk.content,
-            charStart: chunk.charStart,
-            charEnd: chunk.charEnd,
-          })),
-        });
-      }
-
-      await tx.documentSource.update({
-        where: { id },
-        data: {
-          status: "parsed",
-          rawContent,
-          chunkCount: chunks.length,
-        },
-      });
-    });
+    await replaceTextChunksAndIndex(id, chunks, { rawContent });
 
     onProgress?.("done", 100);
     return { rawContent, chunkCount: chunks.length };
@@ -446,7 +414,19 @@ export async function updateDocumentContent(id: string, rawContent: string) {
 
   if (doc.rawContent === rawContent) return doc;
 
-  const chunks = await splitContentToChunks(rawContent, doc.fileType);
+  const imageTypes = ["png", "jpg", "jpeg", "webp", "bmp"];
+  const isImage = imageTypes.includes(doc.fileType);
+
+  let chunks: TextChunk[];
+  if (isImage) {
+    chunks = [{ content: rawContent, charStart: 0, charEnd: rawContent.length }];
+  } else {
+    const hasTable = containsTable(rawContent);
+    const semanticChunks = hasTable
+      ? null
+      : await splitTextSemantic(rawContent);
+    chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
+  }
 
   await replaceTextChunksAndIndex(id, chunks, { rawContent });
 

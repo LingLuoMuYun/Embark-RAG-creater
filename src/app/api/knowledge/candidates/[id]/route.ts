@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  deleteCandidateById,
+  deleteCandidateHard,
+  rejectCandidate,
   updateCandidate,
 } from "@/server/services/extraction.service";
 import { UpdateCandidateSchema } from "@/features/extraction/extraction.validation";
@@ -65,13 +66,34 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const result = await deleteCandidateById(id);
+    const { searchParams } = new URL(request.url);
+    const action = searchParams.get("action");
 
+    // action=reject → 软删除（拒绝）
+    if (action === "reject") {
+      const result = await rejectCandidate(id);
+      if (!result) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: { code: "NOT_FOUND", message: "候选知识不存在" },
+          },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        message: "已拒绝该候选知识",
+      });
+    }
+
+    // 默认 → 硬删除
+    const result = await deleteCandidateHard(id);
     if (!result) {
       return NextResponse.json(
         {
@@ -84,7 +106,7 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: "已拒绝该候选知识",
+      message: "已删除该候选知识",
     });
   } catch (err: unknown) {
     const message =

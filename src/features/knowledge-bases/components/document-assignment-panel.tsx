@@ -1,5 +1,7 @@
 "use client";
 
+import type * as React from "react";
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,9 +19,17 @@ type DocumentAssignmentPanelProps = {
   availableDocuments: RagDoc[];
   dirty: boolean;
   saving: boolean;
+  selectedControls?: React.ReactNode;
+  selectedEmptyText?: string;
+  expandedDocumentIds?: Set<string>;
+  highlightedChunkId?: string | null;
+  highlightedCategory?: string;
+  highlightedTag?: string;
+  searchKeyword?: string;
   onEnable: (documentId: string) => void;
   onRemove: (documentId: string) => void;
   onSave: () => void;
+  onToggleDocument?: (documentId: string) => void;
 };
 
 export function DocumentAssignmentPanel({
@@ -27,9 +37,17 @@ export function DocumentAssignmentPanel({
   availableDocuments,
   dirty,
   saving,
+  selectedControls,
+  selectedEmptyText = "当前 RAG 暂未引用文档，可以从待选文档中启用。",
+  expandedDocumentIds,
+  highlightedChunkId,
+  highlightedCategory,
+  highlightedTag,
+  searchKeyword,
   onEnable,
   onRemove,
   onSave,
+  onToggleDocument,
 }: DocumentAssignmentPanelProps) {
   return (
     <Card>
@@ -45,12 +63,19 @@ export function DocumentAssignmentPanel({
         </Button>
       </CardHeader>
       <CardContent className="space-y-5">
+        {selectedControls}
         <AssignmentDocumentList
           description="当前 RAG 会基于以下文档进行知识增强。"
           documents={selectedDocuments}
-          emptyText="当前 RAG 暂未引用文档，可从待选文档中启用。"
+          emptyText={selectedEmptyText}
+          expandedDocumentIds={expandedDocumentIds}
+          highlightedChunkId={highlightedChunkId}
+          highlightedCategory={highlightedCategory}
+          highlightedTag={highlightedTag}
           kind="selected"
           onMove={onRemove}
+          onToggleDocument={onToggleDocument}
+          searchKeyword={searchKeyword}
           title={`已引用文档（${selectedDocuments.length}）`}
         />
         <AssignmentDocumentList

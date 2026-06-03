@@ -10,7 +10,13 @@ type AssignmentDocumentListProps = {
   emptyText: string;
   documents: RagDoc[];
   kind: "selected" | "available";
+  expandedDocumentIds?: Set<string>;
+  highlightedChunkId?: string | null;
+  highlightedCategory?: string;
+  highlightedTag?: string;
+  searchKeyword?: string;
   onMove: (documentId: string) => void;
+  onToggleDocument?: (documentId: string) => void;
 };
 
 export function AssignmentDocumentList({
@@ -19,7 +25,13 @@ export function AssignmentDocumentList({
   emptyText,
   documents,
   kind,
+  expandedDocumentIds,
+  highlightedChunkId,
+  highlightedCategory,
+  highlightedTag,
+  searchKeyword,
   onMove,
+  onToggleDocument,
 }: AssignmentDocumentListProps) {
   return (
     <section className="space-y-3">
@@ -38,7 +50,13 @@ export function AssignmentDocumentList({
               key={document.id}
               document={document}
               kind={kind}
+              expanded={expandedDocumentIds?.has(document.id)}
+              highlightedChunkId={highlightedChunkId}
+              highlightedCategory={highlightedCategory}
+              highlightedTag={highlightedTag}
+              searchKeyword={searchKeyword}
               onMove={onMove}
+              onToggleExpanded={onToggleDocument}
             />
           ))}
         </div>

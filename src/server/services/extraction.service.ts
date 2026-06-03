@@ -236,7 +236,7 @@ export async function getCandidateById(id: string) {
   });
 }
 
-export async function deleteCandidateById(id: string) {
+export async function rejectCandidate(id: string) {
   const existing = await prisma.documentChunk.findFirst({
     where: { id, chunkType: "knowledge" },
   });
@@ -247,6 +247,39 @@ export async function deleteCandidateById(id: string) {
     data: { reviewStatus: "rejected", chunkStatus: "disabled" },
   });
   return existing;
+}
+
+export async function deleteCandidateHard(id: string) {
+  const existing = await prisma.documentChunk.findFirst({
+    where: { id, chunkType: "knowledge" },
+  });
+  if (!existing) return null;
+  await deleteChunkEmbeddings([id]);
+  await prisma.documentChunk.delete({
+    where: { id },
+  });
+  return existing;
+}
+
+export async function deleteCandidatesBatch(ids: string[]) {
+  const results: { id: string; success: boolean; error?: string }[] = [];
+
+  for (const id of ids) {
+    try {
+      const result = await deleteCandidateHard(id);
+      if (!result) {
+        results.push({ id, success: false, error: "Not found" });
+      } else {
+        results.push({ id, success: true });
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Delete failed";
+      results.push({ id, success: false, error: message });
+    }
+  }
+
+  return results;
 }
 
 export async function listCandidatesByDocument(

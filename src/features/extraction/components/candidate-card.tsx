@@ -15,6 +15,7 @@ interface Props {
   onToggle: (id: string) => void;
   onEdit: (candidate: Candidate) => void;
   onReject: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
 const typeLabels: Record<string, string> = {
@@ -39,6 +40,7 @@ export default function CandidateCard({
   onToggle,
   onEdit,
   onReject,
+  onDelete,
 }: Props) {
   return (
     <div
@@ -105,9 +107,18 @@ export default function CandidateCard({
               e.stopPropagation();
               onReject(candidate.id);
             }}
-            className="text-sm text-red-500 hover:text-red-700 font-medium whitespace-nowrap"
+            className="text-sm text-amber-600 hover:text-amber-800 font-medium whitespace-nowrap"
           >
             拒绝
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(candidate.id);
+            }}
+            className="text-sm text-red-500 hover:text-red-700 font-medium whitespace-nowrap"
+          >
+            删除
           </button>
         </div>
       </div>
