@@ -1,8 +1,8 @@
 import type {
   KnowledgeBaseFormValues,
-  RagIconName,
   RagChunk,
   RagDoc,
+  RagIconName,
   RagListItem,
   RagStatus,
   SortDirection,
@@ -10,29 +10,24 @@ import type {
   StatusFilter,
 } from "./types";
 
-// 判断接口返回值是否可按普通对象读取字段。
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-// 从未知值中提取非空字符串，失败时使用兜底值。
 function toStringValue(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim().length > 0
     ? value
     : fallback;
 }
 
-// 从未知值中提取有限数字，失败时使用兜底值。
 function toNumberValue(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-// 将接口状态值规整为前端支持的知识库状态。
 function toStatus(value: unknown): RagStatus {
   return value === "active" || value === "disabled" ? value : "disabled";
 }
 
-// RAG 知识库可选图标及其展示文案、颜色样式。
 export const RAG_ICON_OPTIONS = [
   { value: "Database", label: "数据库", className: "text-blue-600 bg-blue-50" },
   {
@@ -66,12 +61,10 @@ export function isRagIconName(value: unknown): value is RagIconName {
   return RAG_ICON_OPTIONS.some((option) => option.value === value);
 }
 
-// 将未知图标值归一化为合法图标名。
 export function normalizeRagIcon(value: unknown): RagIconName {
   return isRagIconName(value) ? value : "Database";
 }
 
-// 获取图标配置，非法图标值会回退到默认配置。
 export function getRagIconOption(icon: unknown) {
   const normalized = normalizeRagIcon(icon);
 
@@ -81,12 +74,10 @@ export function getRagIconOption(icon: unknown) {
   );
 }
 
-// 生成前端临时 ID，用于兜底数据和本地模拟数据。
 export function createClientId() {
   return `kb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// 将接口或模拟数据归一化为知识库列表项。
 export function normalizeRagItem(input: unknown): RagListItem {
   const item = isRecord(input) ? input : {};
 
@@ -104,7 +95,6 @@ export function normalizeRagItem(input: unknown): RagListItem {
   };
 }
 
-// 将未知列表响应归一化为知识库列表。
 export function normalizeRagItems(input: unknown): RagListItem[] {
   const list = Array.isArray(input)
     ? input
@@ -115,7 +105,6 @@ export function normalizeRagItems(input: unknown): RagListItem[] {
   return list.map(normalizeRagItem);
 }
 
-// 统计知识库总数、启用数和禁用数。
 export function getKnowledgeBaseStats(items: RagListItem[]) {
   return {
     total: items.length,
@@ -124,7 +113,6 @@ export function getKnowledgeBaseStats(items: RagListItem[]) {
   };
 }
 
-// 按关键词、状态筛选知识库，并按指定字段和方向排序。
 export function filterAndSortRagItems(params: {
   items: RagListItem[];
   keyword: string;
@@ -163,7 +151,6 @@ export function filterAndSortRagItems(params: {
   });
 }
 
-// 校验知识库创建和编辑表单，返回首个错误信息。
 export function validateKnowledgeBaseForm(params: {
   values: KnowledgeBaseFormValues;
   items: RagListItem[];
@@ -191,10 +178,8 @@ export function validateKnowledgeBaseForm(params: {
   return null;
 }
 
-// 单个上传文件大小上限：20MB。
 export const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
 
-// 前端允许上传的文件扩展名。
 export const ALLOWED_EXTENSIONS = [
   ".pdf",
   ".docx",
@@ -203,7 +188,6 @@ export const ALLOWED_EXTENSIONS = [
   ".markdown",
 ];
 
-// 前端允许上传的 MIME 类型，空 MIME 时会以扩展名兜底。
 export const ALLOWED_MIME_TYPES = [
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -211,14 +195,12 @@ export const ALLOWED_MIME_TYPES = [
   "text/markdown",
 ];
 
-// 获取文件扩展名，用于上传格式校验。
 function getFileExtension(fileName: string) {
   const index = fileName.lastIndexOf(".");
 
   return index >= 0 ? fileName.slice(index).toLowerCase() : "";
 }
 
-// 将字节数格式化为适合界面展示的文件大小。
 export function formatFileSize(size: number) {
   if (!Number.isFinite(size) || size <= 0) return "0 B";
   if (size < 1024) return `${size} B`;
@@ -227,7 +209,6 @@ export function formatFileSize(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-// 校验上传文件数量、格式、大小和当前知识库内的文件名重复。
 export function validateUploadFile(params: {
   files: FileList | File[];
   selectedDocs: RagDoc[];
@@ -260,17 +241,16 @@ export function validateUploadFile(params: {
   return null;
 }
 
-// 根据上传文件生成本地模拟文档数据。
 export function createMockDocumentFromFile(file: File): RagDoc {
   return {
     id: createClientId(),
     name: file.name,
     size: file.size,
+    fileSize: file.size,
     uploadedAt: new Date().toISOString(),
   };
 }
 
-// 为模拟文档生成本地知识分片数据。
 export function createMockChunksForDocument(doc: RagDoc): RagChunk[] {
   const count = 2 + Math.floor(Math.random() * 2);
 
@@ -283,12 +263,12 @@ export function createMockChunksForDocument(doc: RagDoc): RagChunk[] {
       content,
       charCount: content.length,
       tokenCount: Math.ceil(content.length / 2),
+      chunkIndex: index,
       createdAt: new Date().toISOString(),
     };
   });
 }
 
-// 汇总所有文档下的分片总数。
 export function getTotalChunkCount(
   chunksByDocumentId: Record<string, RagChunk[]>
 ) {
@@ -298,62 +278,71 @@ export function getTotalChunkCount(
   );
 }
 
-// 将接口或模拟数据归一化为知识文档。
 export function normalizeRagDoc(input: unknown): RagDoc {
   const item = isRecord(input) ? input : {};
+  const fileSize = toNumberValue(item.fileSize, toNumberValue(item.size, 0));
+  const name = toStringValue(
+    item.name,
+    toStringValue(item.title, "未命名文档")
+  );
 
   return {
-    id: typeof item.id === "string" ? item.id : createClientId(),
-    name:
-      typeof item.name === "string" && item.name.trim()
-        ? item.name
-        : "未命名文档",
-    size: toNumberValue(item.size, 0),
-    uploadedAt:
-      typeof item.uploadedAt === "string" && item.uploadedAt.trim()
-        ? item.uploadedAt
-        : "--",
-    sourceType:
-      typeof item.sourceType === "string" ? item.sourceType : undefined,
-    fileType:
-      typeof item.fileType === "string" ? item.fileType : undefined,
+    id: toStringValue(item.id, createClientId()),
+    name,
+    title: toStringValue(item.title, name),
+    originalName: toStringValue(item.originalName, ""),
+    fileName:
+      typeof item.fileName === "string" || item.fileName === null
+        ? item.fileName
+        : null,
+    sourceType: toStringValue(item.sourceType, "manual"),
+    fileType: toStringValue(item.fileType, "file"),
     rawContent:
-      typeof item.rawContent === "string" ? item.rawContent : undefined,
-    status:
-      typeof item.status === "string" ? item.status : undefined,
+      typeof item.rawContent === "string" || item.rawContent === null
+        ? item.rawContent
+        : undefined,
+    status: toStringValue(item.status, "pending"),
+    activeStatus: toStringValue(item.activeStatus, "active"),
+    chunkCount: toNumberValue(item.chunkCount, 0),
+    size: fileSize,
+    fileSize,
+    uploadedAt: toStringValue(
+      item.uploadedAt,
+      toStringValue(item.createdAt, "--")
+    ),
+    createdAt: toStringValue(item.createdAt, "--"),
+    updatedAt: toStringValue(item.updatedAt, "--"),
     chunks: Array.isArray(item.chunks)
       ? item.chunks.map(normalizeRagChunk)
       : undefined,
   };
 }
 
-// 将接口或模拟数据归一化为知识分片。
 export function normalizeRagChunk(input: unknown): RagChunk {
   const item = isRecord(input) ? input : {};
-  const content =
-    typeof item.content === "string" && item.content.trim()
-      ? item.content
-      : "暂无内容";
+  const content = toStringValue(item.content, "暂无内容");
 
   return {
-    id: typeof item.id === "string" ? item.id : createClientId(),
-    documentId: typeof item.documentId === "string" ? item.documentId : "",
+    id: toStringValue(item.id, createClientId()),
+    documentId: toStringValue(item.documentId, ""),
     content,
     charCount: toNumberValue(item.charCount, content.length),
     tokenCount:
       typeof item.tokenCount === "number" && Number.isFinite(item.tokenCount)
         ? item.tokenCount
         : undefined,
-    createdAt:
-      typeof item.createdAt === "string" && item.createdAt.trim()
-        ? item.createdAt
-        : "--",
-    chunkType:
-      typeof item.chunkType === "string" ? item.chunkType : undefined,
-    title:
-      typeof item.title === "string" ? item.title : undefined,
+    createdAt: toStringValue(item.createdAt, "--"),
+    updatedAt: toStringValue(item.updatedAt, "--"),
+    chunkIndex: toNumberValue(item.chunkIndex, 0),
+    status: toStringValue(item.status, "active"),
+    startIndex: toNumberValue(item.startIndex, 0),
+    endIndex: toNumberValue(item.endIndex, content.length),
+    chunkType: typeof item.chunkType === "string" ? item.chunkType : undefined,
+    title: typeof item.title === "string" ? item.title : undefined,
     suggestedCategory:
-      typeof item.suggestedCategory === "string" ? item.suggestedCategory : undefined,
+      typeof item.suggestedCategory === "string"
+        ? item.suggestedCategory
+        : undefined,
     suggestedTags:
       typeof item.suggestedTags === "string" ? item.suggestedTags : undefined,
     knowledgeType:

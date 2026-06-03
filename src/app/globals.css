@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@uiw/react-md-editor/markdown-editor.css";
+@import "@uiw/react-markdown-preview/markdown.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -131,4 +133,41 @@ body {
   html {
     @apply font-sans;
   }
+}
+
+.note-markdown-editor .w-md-editor-toolbar {
+  min-height: 48px;
+  padding: 6px 10px;
+}
+
+.note-markdown-editor .w-md-editor-toolbar ul {
+  align-items: center;
+  gap: 4px;
+}
+
+.note-markdown-editor .w-md-editor-toolbar li > button {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+}
+
+.note-markdown-editor .w-md-editor-toolbar li > button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.note-markdown-editor .w-md-editor-toolbar-divider {
+  height: 24px;
+  margin-inline: 4px;
+}
+
+.note-markdown-editor .w-md-editor {
+  border-color: var(--border);
+  min-height: 560px;
+}
+
+.note-markdown-editor .w-md-editor-content {
+  flex: 1 1 auto;
+  min-height: 0;
 }

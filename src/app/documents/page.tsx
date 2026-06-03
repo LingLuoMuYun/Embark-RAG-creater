@@ -26,9 +26,9 @@ export default function DocumentsPage() {
     // 立即刷新列表，让"解析中"状态显示出来
     setRefreshKey((k) => k + 1);
     try {
-      await Promise.all(ids.map((id) =>
-        fetch(`/api/documents/${id}/parse`, { method: "POST" })
-      ));
+      await Promise.all(
+        ids.map((id) => fetch(`/api/documents/${id}/parse`, { method: "POST" }))
+      );
     } catch {
       // error handled by list refresh
     } finally {
@@ -55,7 +55,8 @@ export default function DocumentsPage() {
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">上传文件</h2>
           <p className="text-sm text-gray-500 mb-3">
-            支持 .txt .md .csv .xlsx .docx .pdf .png .jpg .jpeg .webp .bmp 格式，最大 100MB
+            支持 .txt .md .csv .xlsx .docx .pdf .png .jpg .jpeg .webp .bmp
+            格式，最大 100MB
           </p>
           <DocumentUploader onUploaded={handleUploaded} />
         </div>

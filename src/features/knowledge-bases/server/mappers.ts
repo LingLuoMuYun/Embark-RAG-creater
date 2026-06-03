@@ -107,11 +107,15 @@ export function mapKnowledgeBaseListItem(item: KnowledgeBaseListRecord) {
 }
 
 export function mapDocumentSourceListItem(document: DocumentSourceRecord) {
+  const chunkCount = document.chunks?.length ?? document.chunkCount ?? 0;
+
   return {
     id: document.id,
     title: document.title,
     name: document.title,
+    originalName: document.originalName,
     sourceType: document.sourceType,
+    fileType: document.fileType,
     fileName: document.fileName,
     fileUrl: document.fileUrl,
     mimeType: document.mimeType,
@@ -123,7 +127,7 @@ export function mapDocumentSourceListItem(document: DocumentSourceRecord) {
     status: document.status,
     activeStatus: document.activeStatus,
     error: document.error,
-    chunkCount: document.chunks?.length ?? 0,
+    chunkCount,
     knowledgeBaseCount: document.knowledgeBases?.length ?? 0,
     uploadedAt: document.createdAt.toISOString(),
     createdAt: document.createdAt.toISOString(),
@@ -132,11 +136,15 @@ export function mapDocumentSourceListItem(document: DocumentSourceRecord) {
 }
 
 export function mapDocumentSourceDetail(document: DocumentSourceRecord) {
+  const chunks = (document.chunks ?? []).map(mapDocumentChunk);
+
   return {
     id: document.id,
     title: document.title,
     name: document.title,
+    originalName: document.originalName,
     sourceType: document.sourceType,
+    fileType: document.fileType,
     fileName: document.fileName,
     fileUrl: document.fileUrl,
     mimeType: document.mimeType,
@@ -148,10 +156,11 @@ export function mapDocumentSourceDetail(document: DocumentSourceRecord) {
     status: document.status,
     activeStatus: document.activeStatus,
     error: document.error,
+    chunkCount: chunks.length || document.chunkCount || 0,
     uploadedAt: document.createdAt.toISOString(),
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
-    chunks: (document.chunks ?? []).map(mapDocumentChunk),
+    chunks,
     knowledgeBases: (document.knowledgeBases ?? []).map((relation) => ({
       relationId: relation.id,
       id: relation.knowledgeBase.id,

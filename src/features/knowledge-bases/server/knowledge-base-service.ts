@@ -100,6 +100,48 @@ async function assertDocumentIdsExist(
   return uniqueDocumentIds;
 }
 
+async function assertDocumentsCanBeKnowledgeSource(
+  tx: Prisma.TransactionClient,
+  documentIds: string[]
+) {
+  const uniqueDocumentIds = [...new Set(documentIds)];
+
+  if (uniqueDocumentIds.length === 0) return uniqueDocumentIds;
+
+  const documents = await tx.documentSource.findMany({
+    where: { id: { in: uniqueDocumentIds } },
+    select: {
+      id: true,
+      status: true,
+      activeStatus: true,
+    },
+  });
+
+  if (documents.length !== uniqueDocumentIds.length) {
+    const existingIds = new Set(documents.map((document) => document.id));
+    const missingIds = uniqueDocumentIds.filter((id) => !existingIds.has(id));
+
+    throw badRequest("some documents do not exist", {
+      documentIds: missingIds,
+    });
+  }
+
+  const unavailableIds = documents
+    .filter(
+      (document) =>
+        document.status !== "parsed" || document.activeStatus !== "active"
+    )
+    .map((document) => document.id);
+
+  if (unavailableIds.length > 0) {
+    throw badRequest("some documents are not available knowledge sources", {
+      documentIds: unavailableIds,
+    });
+  }
+
+  return uniqueDocumentIds;
+}
+
 async function createDocumentWithChunks(
   tx: Prisma.TransactionClient,
   input: CreateDocumentSourceInput
@@ -294,7 +336,10 @@ export async function bindDocumentsToKnowledgeBaseService(
 
     if (!knowledgeBase) throw notFound("knowledge base not found");
 
-    const uniqueDocumentIds = await assertDocumentIdsExist(tx, documentIds);
+    const uniqueDocumentIds = await assertDocumentsCanBeKnowledgeSource(
+      tx,
+      documentIds
+    );
     const existingRelations = await tx.knowledgeBaseDocument.findMany({
       where: {
         knowledgeBaseId,

@@ -4,7 +4,6 @@ import {
   type ComponentType,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -152,7 +151,6 @@ function getStatusText(status: RagListItem["status"]) {
 
 export function RagManage() {
   const router = useRouter();
-  const didHydrate = useRef(false);
   const items = useAppStore((state) => state.items);
   const loading = useAppStore((state) => state.loading);
   const error = useAppStore((state) => state.error);
@@ -186,10 +184,7 @@ export function RagManage() {
   const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
 
   useEffect(() => {
-    if (didHydrate.current) return;
-
     let ignore = false;
-    didHydrate.current = true;
 
     async function loadRagItems() {
       setLoading(true);
@@ -226,6 +221,7 @@ export function RagManage() {
   }, [setError, setItems, setLoading]);
 
   const stats = useMemo(() => getKnowledgeBaseStats(items), [items]);
+  const showInitialLoading = loading && items.length === 0;
   const visibleItems = useMemo(
     () =>
       filterAndSortRagItems({
@@ -491,7 +487,7 @@ export function RagManage() {
         </CardContent>
       </Card>
 
-      {loading ? (
+      {showInitialLoading ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
             正在加载知识库...

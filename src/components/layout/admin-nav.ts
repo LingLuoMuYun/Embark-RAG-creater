@@ -43,7 +43,7 @@ export const adminNavItems = [
     title: "知识库管理",
     href: "/knowledge-bases",
     Icon: BrainCircuit,
-    activePatterns: ["/knowledge-bases", "/personaldoc"],
+    activePatterns: ["/knowledge-bases", "/note"],
     children: [
       {
         label: "知识库管理",
@@ -55,7 +55,7 @@ export const adminNavItems = [
       {
         label: "知识笔记",
         title: "知识笔记",
-        href: "/personaldoc",
+        href: "/note",
         Icon: NotebookTabs,
         match: "prefix",
       },

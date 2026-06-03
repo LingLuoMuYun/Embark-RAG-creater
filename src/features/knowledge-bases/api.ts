@@ -155,3 +155,67 @@ export async function fetchDocumentChunks(params: { documentId: string }) {
 
   return readApiData<unknown>(response);
 }
+
+export async function fetchKnowledgeSourceDocuments() {
+  const response = await fetch(
+    "/api/rag-management/documents?status=parsed&activeStatus=active",
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch source documents: ${response.status}`);
+  }
+
+  return readApiData<unknown>(response);
+}
+
+export async function bindKnowledgeBaseDocuments(
+  knowledgeBaseId: string,
+  documentIds: string[]
+) {
+  const response = await fetch(
+    `/api/rag-management/knowledge-bases/${knowledgeBaseId}/documents`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ documentIds }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to bind documents: ${response.status}`);
+  }
+
+  return readApiData<unknown>(response);
+}
+
+export async function unbindKnowledgeBaseDocuments(
+  knowledgeBaseId: string,
+  documentIds: string[]
+) {
+  const response = await fetch(
+    `/api/rag-management/knowledge-bases/${knowledgeBaseId}/documents`,
+    {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ documentIds }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to unbind documents: ${response.status}`);
+  }
+
+  return readApiData<unknown>(response);
+}

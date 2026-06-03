@@ -28,12 +28,20 @@ export type RagListItem = {
 export type RagDoc = {
   id: string;
   name: string;
-  size: number;
-  uploadedAt: string;
+  title?: string;
+  originalName?: string;
+  fileName?: string | null;
   sourceType?: string;
   fileType?: string;
-  rawContent?: string;
+  rawContent?: string | null;
   status?: string;
+  activeStatus?: string;
+  chunkCount?: number;
+  size: number;
+  fileSize?: number;
+  uploadedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
   chunks?: RagChunk[];
 };
 
@@ -44,6 +52,11 @@ export type RagChunk = {
   tokenCount?: number;
   charCount?: number;
   createdAt?: string;
+  updatedAt?: string;
+  chunkIndex?: number;
+  status?: string;
+  startIndex?: number;
+  endIndex?: number;
   chunkType?: string;
   title?: string | null;
   suggestedCategory?: string | null;

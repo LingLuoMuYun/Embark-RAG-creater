@@ -1,6 +1,6 @@
 "use client";
 import { create } from "zustand";
-import { createAppSlice } from "./slices/app-slice";
+import { createAppSlice } from "./slices/note";
 import { createDocumentSlice } from "./slices/document-slice";
 import { createKnowledgeBaseSlice } from "./slices/knowledge-base-slice";
 import { createExtractionSlice } from "./slices/extraction-slice";

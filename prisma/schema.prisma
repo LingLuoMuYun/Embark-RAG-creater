@@ -42,7 +42,7 @@ model DocumentSource {
   title        String
 
   // File metadata
-  fileType String
+  fileType String @default("file")
   fileName String?
   fileUrl  String?
   mimeType String?
