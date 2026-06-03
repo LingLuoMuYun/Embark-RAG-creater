@@ -46,7 +46,7 @@ export async function retrieveRagContexts(
   const resultGroups = (
     await Promise.all(
       processedQuery.retrievalQueries.map(async (retrievalQuery) => {
-        const queryVector = embedQuery(retrievalQuery);
+        const queryVector = await embedQuery(retrievalQuery);
         const vectorResults = (await searchByVector(scopedChunks, queryVector))
           .filter((item) => item.score >= RAG_CONFIG.vectorMinScore)
           .slice(0, candidateLimit);
@@ -83,7 +83,7 @@ export async function retrieveRagContexts(
     });
   }
 
-  const anchorChunks = selectByMmr(thresholdResult.candidates, topK);
+  const anchorChunks = await selectByMmr(thresholdResult.candidates, topK);
   const scoredChunks = expandWithAdjacentChunks(
     anchorChunks,
     scopedChunks,

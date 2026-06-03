@@ -19,6 +19,14 @@ import {
   mapDocumentSourceDetail,
   mapDocumentSourceListItem,
 } from "@/features/knowledge-bases/server/mappers";
+import {
+  getRetrievableChunkWhere,
+  mapDocumentChunkToKnowledgeChunk,
+} from "@/server/services/rag/chunk-mapper";
+import {
+  deleteChunkEmbeddings,
+  indexChunks,
+} from "@/server/services/rag/vector-index-repository";
 import type {
   CreateDocumentChunkInput,
   CreateDocumentSourceInput,
@@ -38,6 +46,172 @@ async function ensureUploadDir(): Promise<void> {
     await fs.mkdir(UPLOAD_DIR, { recursive: true });
   } catch {
     // directory already exists
+  }
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+async function deleteEmbeddingsForDocumentChunks(documentSourceId: string) {
+  const chunks = await prisma.documentChunk.findMany({
+    where: { documentSourceId },
+    select: { id: true },
+  });
+
+  await deleteChunkEmbeddings(chunks.map((chunk) => chunk.id));
+}
+
+async function listDocumentRagChunksForIndex(documentSourceId: string) {
+  const chunks = await prisma.documentChunk.findMany({
+    where: {
+      documentSourceId,
+      content: { not: "" },
+    },
+    include: {
+      documentSource: {
+        include: {
+          knowledgeBases: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              knowledgeBase: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { chunkIndex: "asc" },
+  });
+
+  return chunks.map((chunk) => mapDocumentChunkToKnowledgeChunk(chunk));
+}
+
+async function reindexRetrievableDocumentChunks(documentSourceId: string) {
+  const chunks = await prisma.documentChunk.findMany({
+    where: {
+      documentSourceId,
+      chunkStatus: "active",
+      content: { not: "" },
+      ...getRetrievableChunkWhere(),
+    },
+    include: {
+      documentSource: {
+        include: {
+          knowledgeBases: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              knowledgeBase: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { chunkIndex: "asc" },
+  });
+
+  await indexChunks(chunks.map((chunk) => mapDocumentChunkToKnowledgeChunk(chunk)));
+}
+
+export async function replaceTextChunksAndIndex(
+  documentSourceId: string,
+  chunks: TextChunk[],
+  options: { rawContent?: string }
+) {
+  await prisma.$transaction(async (tx) => {
+    const oldChunks = await tx.documentChunk.findMany({
+      where: { documentSourceId },
+      select: { id: true },
+    });
+    const oldChunkIds = oldChunks.map((chunk) => chunk.id);
+
+    if (oldChunkIds.length > 0) {
+      await tx.chunkEmbedding.deleteMany({
+        where: { chunkId: { in: oldChunkIds } },
+      });
+    }
+
+    await tx.documentChunk.deleteMany({
+      where: { documentSourceId },
+    });
+
+    if (chunks.length > 0) {
+      await tx.documentChunk.createMany({
+        data: chunks.map((chunk: TextChunk, index: number) => ({
+          documentSourceId,
+          chunkIndex: index,
+          content: chunk.content,
+          charStart: chunk.charStart,
+          charEnd: chunk.charEnd,
+          chunkType: "text",
+          chunkStatus: "disabled",
+        })),
+      });
+    }
+
+    await tx.documentSource.update({
+      where: { id: documentSourceId },
+      data: {
+        status: "parsing",
+        rawContent: options.rawContent,
+        chunkCount: chunks.length,
+        error: null,
+      },
+    });
+  });
+
+  const ragChunks = await listDocumentRagChunksForIndex(documentSourceId);
+  const indexedChunkIds = ragChunks.map((chunk) => chunk.id);
+
+  try {
+    await indexChunks(ragChunks);
+
+    await prisma.$transaction([
+      prisma.documentChunk.updateMany({
+        where: {
+          id: { in: indexedChunkIds },
+          chunkType: "text",
+        },
+        data: { chunkStatus: "active" },
+      }),
+      prisma.documentSource.update({
+        where: { id: documentSourceId },
+        data: {
+          status: "parsed",
+          rawContent: options.rawContent,
+          chunkCount: chunks.length,
+          error: null,
+        },
+      }),
+    ]);
+  } catch (error) {
+    await deleteChunkEmbeddings(indexedChunkIds);
+    await prisma.$transaction([
+      prisma.documentChunk.updateMany({
+        where: { id: { in: indexedChunkIds } },
+        data: { chunkStatus: "disabled" },
+      }),
+      prisma.documentSource.update({
+        where: { id: documentSourceId },
+        data: {
+          status: "failed",
+          error: getErrorMessage(error, "Embedding index failed"),
+        },
+      }),
+    ]);
+
+    throw error;
   }
 }
 
@@ -161,6 +335,7 @@ export async function deleteDocument(id: string) {
     // file may not exist on disk
   }
 
+  await deleteEmbeddingsForDocumentChunks(id);
   await prisma.documentSource.delete({ where: { id } });
   return doc;
 }
@@ -211,32 +386,7 @@ export async function parseDocument(id: string): Promise<{
       chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
     }
 
-    await prisma.$transaction(async (tx) => {
-      await tx.documentChunk.deleteMany({
-        where: { documentSourceId: id },
-      });
-
-      if (chunks.length > 0) {
-        await tx.documentChunk.createMany({
-          data: chunks.map((chunk: TextChunk, index: number) => ({
-            documentSourceId: id,
-            chunkIndex: index,
-            content: chunk.content,
-            charStart: chunk.charStart,
-            charEnd: chunk.charEnd,
-          })),
-        });
-      }
-
-      await tx.documentSource.update({
-        where: { id },
-        data: {
-          status: "parsed",
-          rawContent,
-          chunkCount: chunks.length,
-        },
-      });
-    });
+    await replaceTextChunksAndIndex(id, chunks, { rawContent });
 
     return { rawContent, chunkCount: chunks.length };
   } catch (error) {
@@ -267,28 +417,7 @@ export async function updateDocumentContent(id: string, rawContent: string) {
     chunks = semanticChunks ?? splitTextIntoChunks(rawContent);
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.documentChunk.deleteMany({
-      where: { documentSourceId: id },
-    });
-
-    if (chunks.length > 0) {
-      await tx.documentChunk.createMany({
-        data: chunks.map((chunk: TextChunk, index: number) => ({
-          documentSourceId: id,
-          chunkIndex: index,
-          content: chunk.content,
-          charStart: chunk.charStart,
-          charEnd: chunk.charEnd,
-        })),
-      });
-    }
-
-    await tx.documentSource.update({
-      where: { id },
-      data: { rawContent, chunkCount: chunks.length },
-    });
-  });
+  await replaceTextChunksAndIndex(id, chunks, { rawContent });
 
   return prisma.documentSource.findUnique({ where: { id } });
 }
@@ -406,7 +535,7 @@ async function assertKnowledgeBaseIdsExist(
 export async function createDocumentSourceService(
   input: CreateDocumentSourceInput
 ) {
-  return prisma.$transaction(async (tx) => {
+  const document = await prisma.$transaction(async (tx) => {
     const knowledgeBaseIds = input.knowledgeBaseIds
       ? await assertKnowledgeBaseIdsExist(tx, input.knowledgeBaseIds)
       : [];
@@ -430,18 +559,6 @@ export async function createDocumentSourceService(
         status: input.rawContent ? "parsed" : "pending",
         activeStatus: input.activeStatus ?? "active",
         error: input.error,
-        chunks: input.chunks
-          ? {
-              create: input.chunks.map((chunk) => ({
-                content: chunk.content,
-                chunkIndex: chunk.chunkIndex,
-                embedding: chunk.embedding,
-                chunkStatus: chunk.chunkStatus ?? "active",
-                charStart: chunk.startIndex ?? 0,
-                charEnd: chunk.endIndex ?? chunk.content.length,
-              })),
-            }
-          : undefined,
         knowledgeBases:
           knowledgeBaseIds.length > 0
             ? {
@@ -471,6 +588,22 @@ export async function createDocumentSourceService(
 
     return mapDocumentSourceDetail(document);
   });
+
+  if (input.chunks && input.chunks.length > 0) {
+    await replaceTextChunksAndIndex(
+      document.id,
+      input.chunks.map((chunk) => ({
+        content: chunk.content,
+        charStart: chunk.startIndex ?? 0,
+        charEnd: chunk.endIndex ?? chunk.content.length,
+      })),
+      { rawContent: input.rawContent }
+    );
+
+    return getDocumentDetailService(document.id);
+  }
+
+  return document;
 }
 
 export async function getDocumentDetailService(id: string) {
@@ -504,6 +637,12 @@ export async function updateDocumentSourceService(
   input: UpdateDocumentSourceInput
 ) {
   try {
+    const currentDocument = await prisma.documentSource.findUnique({
+      where: { id },
+      select: { title: true },
+    });
+    if (!currentDocument) throw notFound("document not found");
+
     const document = await prisma.documentSource.update({
       where: { id },
       data: {
@@ -538,6 +677,14 @@ export async function updateDocumentSourceService(
       },
     });
 
+    if (
+      input.title !== undefined &&
+      input.title !== currentDocument.title
+    ) {
+      await reindexRetrievableDocumentChunks(id);
+      return getDocumentDetailService(id);
+    }
+
     return mapDocumentSourceDetail(document);
   } catch (error) {
     if (
@@ -553,6 +700,7 @@ export async function updateDocumentSourceService(
 
 export async function deleteDocumentSourceService(id: string) {
   try {
+    await deleteEmbeddingsForDocumentChunks(id);
     await prisma.documentSource.delete({ where: { id } });
     return { id };
   } catch (error) {
@@ -587,43 +735,27 @@ export async function replaceDocumentChunksService(
   documentSourceId: string,
   chunks: CreateDocumentChunkInput[]
 ) {
-  return prisma.$transaction(async (tx) => {
-    const document = await tx.documentSource.findUnique({
-      where: { id: documentSourceId },
-      select: {
-        id: true,
-        knowledgeBases: {
-          orderBy: { sortOrder: "asc" },
-          select: { knowledgeBaseId: true },
-        },
-      },
-    });
-
-    if (!document) throw notFound("document not found");
-
-    await tx.documentChunk.deleteMany({
-      where: { documentSourceId },
-    });
-
-    if (chunks.length > 0) {
-      await tx.documentChunk.createMany({
-        data: chunks.map((chunk) => ({
-          documentSourceId,
-          content: chunk.content,
-          chunkIndex: chunk.chunkIndex,
-          embedding: chunk.embedding,
-          chunkStatus: chunk.chunkStatus ?? "active",
-          charStart: chunk.startIndex ?? 0,
-          charEnd: chunk.endIndex ?? chunk.content.length,
-        })),
-      });
-    }
-
-    const nextChunks = await tx.documentChunk.findMany({
-      where: { documentSourceId },
-      orderBy: { chunkIndex: "asc" },
-    });
-
-    return nextChunks.map(mapDocumentChunk);
+  const document = await prisma.documentSource.findUnique({
+    where: { id: documentSourceId },
+    select: { id: true },
   });
+
+  if (!document) throw notFound("document not found");
+
+  await replaceTextChunksAndIndex(
+    documentSourceId,
+    chunks.map((chunk) => ({
+      content: chunk.content,
+      charStart: chunk.startIndex ?? 0,
+      charEnd: chunk.endIndex ?? chunk.content.length,
+    })),
+    {}
+  );
+
+  const nextChunks = await prisma.documentChunk.findMany({
+    where: { documentSourceId },
+    orderBy: { chunkIndex: "asc" },
+  });
+
+  return nextChunks.map(mapDocumentChunk);
 }

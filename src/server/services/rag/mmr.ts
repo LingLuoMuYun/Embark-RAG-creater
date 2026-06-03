@@ -1,12 +1,13 @@
 import { RAG_CONFIG } from "@/server/services/rag/config";
-import { embedChunk, type EmbeddingVector } from "@/server/services/rag/embedding";
+import type { EmbeddingVector } from "@/server/services/rag/embedding";
 import type { RankedRetrievalResult } from "@/server/services/rag/hybrid";
+import { getFreshChunkEmbeddingMap } from "@/server/services/rag/vector-index-repository";
 import { cosineSimilarity } from "@/server/services/rag/vector-store";
 
 type MmrCandidate = {
   result: RankedRetrievalResult;
   relevance: number;
-  embedding: EmbeddingVector;
+  embedding?: EmbeddingVector;
 };
 
 /**
@@ -17,17 +18,17 @@ type MmrCandidate = {
  * 2. 用 chunk embedding 相似度惩罚已选结果的重复内容。
  * 3. 输出重新排序后的 anchor chunk，供后续上下文扩展使用。
  */
-export function selectByMmr(
+export async function selectByMmr(
   results: RankedRetrievalResult[],
   limit: number
-): RankedRetrievalResult[] {
+): Promise<RankedRetrievalResult[]> {
   if (limit <= 0 || results.length === 0) return [];
 
   if (!RAG_CONFIG.mmrEnabled) {
     return rerank(results.slice(0, limit));
   }
 
-  const candidates = toMmrCandidates(results);
+  const candidates = await toMmrCandidates(results);
   const selected: MmrCandidate[] = [];
   const remaining = [...candidates];
   const selectionLimit = Math.min(limit, candidates.length);
@@ -58,29 +59,37 @@ export function selectByMmr(
   return rerank(selected.map((candidate) => candidate.result));
 }
 
-function toMmrCandidates(results: RankedRetrievalResult[]): MmrCandidate[] {
+async function toMmrCandidates(
+  results: RankedRetrievalResult[]
+): Promise<MmrCandidate[]> {
   const scores = results.map((result) => result.score);
   const minScore = Math.min(...scores);
   const maxScore = Math.max(...scores);
   const scoreRange = maxScore - minScore;
+  const embeddingMap = await getFreshChunkEmbeddingMap(
+    results.map((result) => result.chunk)
+  );
 
   return results.map((result) => ({
     result,
     relevance: scoreRange === 0 ? 1 : (result.score - minScore) / scoreRange,
-    embedding: embedChunk(result.chunk),
+    embedding: embeddingMap.get(result.chunk.id)?.embedding,
   }));
 }
 
 function getMaxSimilarity(
-  embedding: EmbeddingVector,
+  embedding: EmbeddingVector | undefined,
   selected: MmrCandidate[]
 ): number {
-  if (selected.length === 0) return 0;
+  if (!embedding || selected.length === 0) return 0;
 
   return Math.max(
-    ...selected.map((candidate) =>
-      Math.max(0, cosineSimilarity(embedding, candidate.embedding))
-    )
+    ...selected
+      .filter((candidate) => candidate.embedding)
+      .map((candidate) =>
+        Math.max(0, cosineSimilarity(embedding, candidate.embedding ?? []))
+      ),
+    0
   );
 }
 
