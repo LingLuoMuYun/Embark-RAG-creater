@@ -154,9 +154,7 @@ export async function extractFromDocument(
         message:
           errors.length === chunks.length
             ? "所有分段提炼均失败，可能是文档内容不适合提炼或 LLM 服务异常"
-            : errors.length > 0
-              ? `提炼失败: ${errors.map((e) => `第${e.chunkIndex + 1}段: ${e.error}`).join("; ")}`
-              : "未从文档中提炼出结构化知识，可能是文档内容不适合自动提炼",
+            : `提炼失败: ${errors.map((e) => `第${e.chunkIndex + 1}段: ${e.error}`).join("; ")}`,
       },
     };
   }
