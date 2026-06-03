@@ -1,7 +1,14 @@
-import Link from "next/link";
-import { LibraryBig } from "lucide-react";
+"use client";
 
-import { adminNavItems } from "@/components/layout/admin-nav";
+import Link from "next/link";
+import * as React from "react";
+import { ChevronDown, LibraryBig } from "lucide-react";
+
+import {
+  adminNavItems,
+  isNavChildActive,
+  isNavItemActive,
+} from "@/components/layout/admin-nav";
 import { cn } from "@/lib/utils";
 
 export type AdminSidebarProps = {
@@ -10,6 +17,17 @@ export type AdminSidebarProps = {
 };
 
 export function AdminSidebar({ sidebarOpen, pathname }: AdminSidebarProps) {
+  const [collapsedParents, setCollapsedParents] = React.useState<
+    Record<string, boolean>
+  >({});
+
+  function toggleParent(href: string) {
+    setCollapsedParents((current) => ({
+      ...current,
+      [href]: !current[href],
+    }));
+  }
+
   return (
     <aside
       className={cn(
@@ -35,28 +53,81 @@ export function AdminSidebar({ sidebarOpen, pathname }: AdminSidebarProps) {
 
       <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
         {adminNavItems.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active = isNavItemActive(item, pathname);
           const Icon = item.Icon;
+          const hasChildren = Boolean(item.children?.length);
+          const expanded =
+            sidebarOpen && active && hasChildren && !collapsedParents[item.href];
 
           return (
-            <Link
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "flex h-9 items-center rounded-md text-sm font-medium transition-colors",
-                sidebarOpen
-                  ? "justify-start gap-2 px-3"
-                  : "justify-center px-0",
-                active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-              href={item.href}
-              key={item.href}
-              title={sidebarOpen ? undefined : item.label}
-            >
-              <Icon aria-hidden="true" className="size-4" />
-              {sidebarOpen ? <span>{item.label}</span> : null}
-            </Link>
+            <div className="flex flex-col gap-1" key={item.href}>
+              <Link
+                aria-current={active && !hasChildren ? "page" : undefined}
+                className={cn(
+                  "flex h-9 items-center rounded-md text-sm font-medium transition-colors",
+                  sidebarOpen
+                    ? "justify-start gap-2 px-3"
+                    : "justify-center px-0",
+                  active
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                )}
+                href={item.href}
+                onClick={(event) => {
+                  if (!hasChildren || !active) return;
+                  event.preventDefault();
+                  toggleParent(item.href);
+                }}
+                title={sidebarOpen ? undefined : item.label}
+              >
+                <Icon aria-hidden="true" className="size-4 shrink-0" />
+                {sidebarOpen ? (
+                  <>
+                    <span className="min-w-0 flex-1 truncate">
+                      {item.label}
+                    </span>
+                    {hasChildren ? (
+                      <ChevronDown
+                        aria-hidden="true"
+                        className={cn(
+                          "size-3.5 shrink-0 transition-transform",
+                          expanded ? "rotate-180" : "rotate-0"
+                        )}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+              </Link>
+
+              {expanded ? (
+                <div className="ml-4 flex flex-col gap-1 border-l border-sidebar-border pl-2">
+                  {item.children?.map((child) => {
+                    const childActive = isNavChildActive(child, pathname);
+                    const ChildIcon = child.Icon;
+
+                    return (
+                      <Link
+                        aria-current={childActive ? "page" : undefined}
+                        className={cn(
+                          "flex h-8 items-center gap-2 rounded-md px-3 text-sm transition-colors",
+                          childActive
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        )}
+                        href={child.href}
+                        key={child.href}
+                      >
+                        <ChildIcon
+                          aria-hidden="true"
+                          className="size-4 shrink-0"
+                        />
+                        <span className="truncate">{child.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </nav>

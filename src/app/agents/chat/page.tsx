@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import { AdminShell } from "@/components/layout/admin-shell";
 import type {
   ChatCitation,
   ChatMessageDTO,
@@ -261,10 +262,11 @@ export default function AgentChatPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-zinc-50 text-zinc-900">
+    <AdminShell>
+      <div className="flex min-h-[calc(100vh-7rem)] bg-zinc-50 text-zinc-900">
 
 
-      <main className="flex min-w-0 flex-1 flex-col">
+        <main className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
           <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
             <div className="min-w-0">
@@ -393,8 +395,9 @@ export default function AgentChatPage() {
             </div>
           </div>
         </footer>
-      </main>
-    </div>
+        </main>
+      </div>
+    </AdminShell>
   );
 }
 
