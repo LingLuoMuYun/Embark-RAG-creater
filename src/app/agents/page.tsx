@@ -38,10 +38,10 @@ export default function AgentsPage() {
           </div>
         </div>
 
-        <div className="mb-4 rounded-lg border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm leading-6 text-cyan-900">
+        {/* <div className="mb-4 rounded-lg border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm leading-6 text-cyan-900">
           当前 Agent 使用通用 knowledgeScope 保存范围配置；知识库、RAG 和 LLM
           Wiki 接入完成后，可直接把 scope 转换给检索接口。
-        </div>
+        </div> */}
 
         <AgentList
           refreshKey={refreshKey}
