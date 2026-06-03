@@ -6,8 +6,8 @@ interface CandidateItem {
   id: string;
   title: string;
   content: string;
-  suggestedCategory: string | null;
-  suggestedTags: string[];
+  suggested_category: string | null;
+  suggested_tags: string[];
   type: string;
   status: string;
 }
@@ -15,7 +15,7 @@ interface CandidateItem {
 interface DocInfo {
   id: string;
   originalName: string;
-  content: string | null;
+  rawContent: string | null;
   status: string;
 }
 
@@ -54,6 +54,9 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
   const [editTarget, setEditTarget] = useState<CandidateItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [editText, setEditText] = useState("");
+  const [editingChunkId, setEditingChunkId] = useState<string | null>(null);
+  const [editChunkContent, setEditChunkContent] = useState("");
+  const [chunkSaving, setChunkSaving] = useState(false);
   const [editTextSaving, setEditTextSaving] = useState(false);
 
   const fetchData = useCallback(async (id: string) => {
@@ -68,7 +71,7 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
       const docData = await docRes.json();
       if (docData.success) {
         setDocInfo(docData.data);
-        setEditText(docData.data.content || "");
+        setEditText(docData.data.rawContent || "");
       }
       const candData = await candRes.json();
       if (candData.success) {
@@ -111,8 +114,8 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
         body: JSON.stringify({
           title: editTarget.title,
           content: editTarget.content,
-          suggestedCategory: editTarget.suggestedCategory,
-          suggestedTags: editTarget.suggestedTags,
+          suggestedCategory: editTarget.suggested_category,
+          suggestedTags: editTarget.suggested_tags,
           type: editTarget.type,
         }),
       });
@@ -209,7 +212,7 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
           ) : tab === "text" ? (
             /* ── 原文内容 ── */
             <div className="space-y-4">
-              {docInfo?.content ? (
+              {docInfo?.rawContent ? (
                 <>
                   <textarea
                     value={editText}
@@ -220,7 +223,7 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
                   <div className="flex justify-end">
                     <button
                       onClick={handleSaveText}
-                      disabled={editText === (docInfo?.content || "") || editTextSaving}
+                      disabled={editText === (docInfo?.rawContent || "") || editTextSaving}
                       className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                     >
                       {editTextSaving ? "保存中..." : "保存修改"}
@@ -256,13 +259,71 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
                       <span className="text-xs font-medium text-zinc-500">
                         第 {i + 1} 段
                       </span>
-                      <span className="text-xs text-zinc-400">
-                        {chunk.content.length.toLocaleString()} 字
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-zinc-400">
+                          {chunk.content.length.toLocaleString()} 字
+                        </span>
+                        {editingChunkId === chunk.id ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={async () => {
+                                setChunkSaving(true);
+                                try {
+                                  const res = await fetch(`/api/chunks/${chunk.id}`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ content: editChunkContent }),
+                                  });
+                                  const json = await res.json();
+                                  if (json.success) {
+                                    setChunks((prev) =>
+                                      prev.map((c) =>
+                                        c.id === chunk.id ? { ...c, content: editChunkContent } : c
+                                      )
+                                    );
+                                    setEditingChunkId(null);
+                                  }
+                                } catch { /* ignore */ } finally {
+                                  setChunkSaving(false);
+                                }
+                              }}
+                              disabled={chunkSaving}
+                              className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {chunkSaving ? "保存中..." : "保存"}
+                            </button>
+                            <button
+                              onClick={() => setEditingChunkId(null)}
+                              className="text-xs px-2 py-0.5 rounded bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
+                            >
+                              取消
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingChunkId(chunk.id);
+                              setEditChunkContent(chunk.content);
+                            }}
+                            className="text-xs px-2 py-0.5 rounded bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
+                          >
+                            编辑
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <pre className="whitespace-pre-wrap break-words px-3 py-3 text-sm leading-relaxed text-gray-700">
-                      {chunk.content}
-                    </pre>
+                    {editingChunkId === chunk.id ? (
+                      <textarea
+                        value={editChunkContent}
+                        onChange={(e) => setEditChunkContent(e.target.value)}
+                        rows={8}
+                        className="w-full px-3 py-3 text-sm leading-relaxed text-gray-700 border-0 resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent rounded-b-lg"
+                      />
+                    ) : (
+                      <pre className="whitespace-pre-wrap break-words px-3 py-3 text-sm leading-relaxed text-gray-700">
+                        {chunk.content}
+                      </pre>
+                    )}
                   </div>
                 ))}
               </div>
@@ -284,9 +345,9 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
                           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${typeColors[c.type] || "bg-gray-100 text-gray-600"}`}>
                             {typeLabels[c.type] || c.type}
                           </span>
-                          {c.suggestedCategory && (
+                          {c.suggested_category && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">
-                              {c.suggestedCategory}
+                              {c.suggested_category}
                             </span>
                           )}
                           <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${statusBadge[c.status] || "bg-gray-100 text-gray-600"}`}>
@@ -295,9 +356,9 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
                         </div>
                         <h3 className="font-medium text-gray-900 text-sm mb-1">{c.title}</h3>
                         <p className="text-xs text-gray-600 whitespace-pre-wrap line-clamp-4">{c.content}</p>
-                        {c.suggestedTags.length > 0 && (
+                        {c.suggested_tags.length > 0 && (
                           <div className="flex gap-1 mt-2 flex-wrap">
-                            {c.suggestedTags.map((tag: string) => (
+                            {c.suggested_tags.map((tag: string) => (
                               <span key={tag} className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{tag}</span>
                             ))}
                           </div>
@@ -359,8 +420,8 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
                   <input
-                    value={editTarget.suggestedCategory || ""}
-                    onChange={(e) => setEditTarget({ ...editTarget, suggestedCategory: e.target.value || null })}
+                    value={editTarget.suggested_category || ""}
+                    onChange={(e) => setEditTarget({ ...editTarget, suggested_category: e.target.value || null })}
                     placeholder="如：前端开发"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
@@ -383,8 +444,8 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">标签（逗号分隔）</label>
                 <input
-                  value={editTarget.suggestedTags.join(", ")}
-                  onChange={(e) => setEditTarget({ ...editTarget, suggestedTags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
+                  value={editTarget.suggested_tags.join(", ")}
+                  onChange={(e) => setEditTarget({ ...editTarget, suggested_tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
                   placeholder="如：React, Hooks"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />

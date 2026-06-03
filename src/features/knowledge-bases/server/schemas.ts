@@ -37,17 +37,21 @@ export const sourceTypeWithAllSchema = z.enum([
   "all",
 ]);
 
-export const parseStatusSchema = z.enum([
+export const pipelineStatusSchema = z.enum([
+  "uploading",
+  "uploaded",
   "pending",
-  "processing",
-  "success",
+  "parsing",
+  "parsed",
   "failed",
 ]);
 
-export const parseStatusWithAllSchema = z.enum([
+export const pipelineStatusWithAllSchema = z.enum([
+  "uploading",
+  "uploaded",
   "pending",
-  "processing",
-  "success",
+  "parsing",
+  "parsed",
   "failed",
   "all",
 ]);
@@ -64,16 +68,16 @@ export const knowledgeBaseListQuerySchema = z.object({
 export const documentListQuerySchema = z.object({
   keyword: z.string().trim().optional(),
   sourceType: sourceTypeWithAllSchema.optional().default("all"),
-  status: statusWithAllSchema.optional().default("all"),
-  parseStatus: parseStatusWithAllSchema.optional().default("all"),
+  activeStatus: statusWithAllSchema.optional().default("all"),
+  status: pipelineStatusWithAllSchema.optional().default("all"),
 });
 
-export const createKnowledgeChunkSchema = z
+export const createDocumentChunkSchema = z
   .object({
     content: z.string().trim().min(1),
     chunkIndex: z.number().int().min(0),
     embedding: z.string().optional(),
-    status: statusSchema.optional().default("active"),
+    chunkStatus: statusSchema.optional().default("active"),
     startIndex: z.number().int().min(0).optional(),
     endIndex: z.number().int().min(0).optional(),
   })
@@ -88,8 +92,8 @@ export const createKnowledgeChunkSchema = z
     }
   );
 
-export const replaceKnowledgeChunksSchema = z.object({
-  chunks: z.array(createKnowledgeChunkSchema),
+export const replaceDocumentChunksSchema = z.object({
+  chunks: z.array(createDocumentChunkSchema),
 });
 
 const documentBaseObjectSchema = z.object({
@@ -102,8 +106,8 @@ const documentBaseObjectSchema = z.object({
   rawContent: z.string().optional(),
   chunkSize: z.number().int().min(100).max(5000).optional().default(800),
   chunkOverlap: z.number().int().min(0).optional().default(100),
-  parseStatus: parseStatusSchema.optional().default("pending"),
-  status: statusSchema.optional().default("active"),
+  status: pipelineStatusSchema.optional().default("pending"),
+  activeStatus: statusSchema.optional().default("active"),
   error: z.string().optional(),
 });
 
@@ -115,12 +119,12 @@ const documentBaseSchema = documentBaseObjectSchema.refine(
   }
 );
 
-export const createKnowledgeDocumentSchema = documentBaseSchema.extend({
-  chunks: z.array(createKnowledgeChunkSchema).optional(),
+export const createDocumentSourceSchema = documentBaseSchema.extend({
+  chunks: z.array(createDocumentChunkSchema).optional(),
   knowledgeBaseIds: z.array(z.string().min(1)).optional(),
 });
 
-export const updateKnowledgeDocumentSchema = documentBaseObjectSchema
+export const updateDocumentSourceSchema = documentBaseObjectSchema
   .partial()
   .refine(
     (value) =>
@@ -141,7 +145,7 @@ export const createKnowledgeBaseSchema = z.object({
   topK: z.number().int().min(1).max(20).optional().default(5),
   status: statusSchema.optional().default("active"),
   documentIds: z.array(z.string().min(1)).optional(),
-  documents: z.array(createKnowledgeDocumentSchema).optional(),
+  documents: z.array(createDocumentSourceSchema).optional(),
 });
 
 export const updateKnowledgeBaseSchema = z
@@ -167,12 +171,12 @@ export type CreateKnowledgeBaseInput = z.infer<
 export type UpdateKnowledgeBaseInput = z.infer<
   typeof updateKnowledgeBaseSchema
 >;
-export type CreateKnowledgeDocumentInput = z.infer<
-  typeof createKnowledgeDocumentSchema
+export type CreateDocumentSourceInput = z.infer<
+  typeof createDocumentSourceSchema
 >;
-export type UpdateKnowledgeDocumentInput = z.infer<
-  typeof updateKnowledgeDocumentSchema
+export type UpdateDocumentSourceInput = z.infer<
+  typeof updateDocumentSourceSchema
 >;
-export type CreateKnowledgeChunkInput = z.infer<
-  typeof createKnowledgeChunkSchema
+export type CreateDocumentChunkInput = z.infer<
+  typeof createDocumentChunkSchema
 >;

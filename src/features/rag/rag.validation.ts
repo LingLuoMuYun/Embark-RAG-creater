@@ -16,3 +16,8 @@ export const ragRetrieveRequestSchema = z.object({
 });
 
 export type RagRetrieveRequestInput = z.infer<typeof ragRetrieveRequestSchema>;
+
+export const searchQuerySchema = z.object({
+  query: z.string().trim().min(1, "搜索内容不能为空"),
+  topK: z.number().int().min(1).max(50).optional().default(5),
+});

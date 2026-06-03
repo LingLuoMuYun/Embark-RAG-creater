@@ -244,16 +244,20 @@ async function countAvailableKnowledgeChunks(
   scope: AgentKnowledgeScope,
   activeStatuses: string[]
 ): Promise<number> {
-  const where: Prisma.KnowledgeChunkWhereInput = {
-    knowledgeBaseId: { in: scope.knowledgeBaseIds },
-    status: { in: activeStatuses },
+  const where: Prisma.DocumentChunkWhereInput = {
+    chunkStatus: { in: activeStatuses },
+    documentSource: {
+      knowledgeBases: {
+        some: { knowledgeBaseId: { in: scope.knowledgeBaseIds } },
+      },
+    },
   };
 
   if (scope.knowledgeIds.length > 0) {
-    where.documentId = { in: scope.knowledgeIds };
+    where.documentSourceId = { in: scope.knowledgeIds };
   }
 
-  return prisma.knowledgeChunk.count({ where });
+  return prisma.documentChunk.count({ where });
 }
 
 function getUncheckedScopeFields(scope: AgentKnowledgeScope): string[] {

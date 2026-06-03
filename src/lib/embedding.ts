@@ -6,6 +6,11 @@ export interface EmbeddingResult {
   embedding: number[];
 }
 
+export async function embedSingle(text: string): Promise<number[]> {
+  const results = await batchEmbedTexts([text]);
+  return results[0]?.embedding ?? [];
+}
+
 export async function batchEmbedTexts(
   texts: string[]
 ): Promise<EmbeddingResult[]> {

@@ -10,18 +10,22 @@ import {
 } from "@/lib/ai-extract";
 import { renderChunkUserPrompt } from "@/lib/prompts/extraction";
 import type { CandidateKnowledgeItem } from "@/features/extraction/extraction.validation";
+import { indexChunks } from "@/server/services/rag/vector-index-repository";
+import type { KnowledgeChunk } from "@/features/rag/types";
 
 // ===== 类型 =====
 
-export interface CandidateRow {
+export interface KnowledgeChunkRow {
   id: string;
-  title: string;
+  documentSourceId: string | null;
+  title: string | null;
   content: string;
   suggestedCategory: string | null;
   suggestedTags: string | null;
-  type: string;
-  status: string;
-  documentSourceId: string | null;
+  chunkType: string;
+  knowledgeType: string | null;
+  reviewStatus: string | null;
+  chunkStatus: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,25 +36,31 @@ export interface ExtractionFromDocumentResult {
   totalChunks: number;
   rawCandidateCount: number;
   dedupedCandidateCount: number;
-  candidates: CandidateRow[];
+  candidates: KnowledgeChunkRow[];
   errors?: Array<{ chunkIndex: number; error: string }>;
 }
 
 // ===== 辅助函数 =====
 
-function toCandidateRow(
+function toKnowledgeChunkData(
   item: CandidateKnowledgeItem,
-  status = "pending",
-  documentSourceId?: string
+  documentSourceId: string,
+  baseIndex = 0
 ) {
+  const tagsJson = JSON.stringify(item.suggestedTags || []);
   return {
-    title: item.title,
+    documentSourceId,
     content: item.content,
+    title: item.title,
+    chunkType: "knowledge",
+    knowledgeType: item.type,
     suggestedCategory: item.suggestedCategory || null,
-    suggestedTags: JSON.stringify(item.suggestedTags || []),
-    type: item.type,
-    status,
-    ...(documentSourceId ? { documentSourceId } : {}),
+    suggestedTags: tagsJson === "[]" ? null : tagsJson,
+    reviewStatus: "pending",
+    chunkStatus: "disabled",
+    chunkIndex: baseIndex,
+    charStart: 0,
+    charEnd: item.content.length,
   };
 }
 
@@ -62,7 +72,7 @@ export async function extractFromText(
   return extractKnowledge(text);
 }
 
-// ===== 从文档提炼（对接 C 的解析结果） =====
+// ===== 从文档提炼 =====
 
 export async function extractFromDocument(
   documentId: string
@@ -149,15 +159,29 @@ export async function extractFromDocument(
   // 5. 去重
   const deduped = deduplicateCandidates(allCandidates);
 
-  // 6. 写入 candidates 表
-  const rows = deduped.map((item) =>
-    toCandidateRow(item, "pending", documentId)
-  );
-  await prisma.candidateKnowledge.createMany({ data: rows });
+  // 6. 获取该文档下 knowledge 类型 chunk 的最大 chunkIndex
+  const maxKnowledgeChunk = await prisma.documentChunk.findFirst({
+    where: { documentSourceId: documentId, chunkType: "knowledge" },
+    orderBy: { chunkIndex: "desc" },
+    select: { chunkIndex: true },
+  });
+  let baseIndex = (maxKnowledgeChunk?.chunkIndex ?? -1) + 1;
 
-  // 7. 查询刚写入的记录返回
-  const saved = await prisma.candidateKnowledge.findMany({
-    where: { documentSourceId: documentId, status: "pending" },
+  // 7. 写入 DocumentChunk（替代旧的 CandidateKnowledge）
+  const rows = deduped.map((item) => {
+    const data = toKnowledgeChunkData(item, documentId, baseIndex);
+    baseIndex += 1;
+    return data;
+  });
+  await prisma.documentChunk.createMany({ data: rows });
+
+  // 8. 查询刚写入的记录返回
+  const saved = await prisma.documentChunk.findMany({
+    where: {
+      documentSourceId: documentId,
+      chunkType: "knowledge",
+      reviewStatus: "pending",
+    },
     orderBy: { createdAt: "desc" },
     take: deduped.length,
   });
@@ -171,67 +195,64 @@ export async function extractFromDocument(
       rawCandidateCount: allCandidates.length,
       dedupedCandidateCount: deduped.length,
       candidates: saved.map((c) => ({
-        ...c,
+        id: c.id,
+        documentSourceId: c.documentSourceId,
+        title: c.title,
+        content: c.content,
         suggestedCategory: c.suggestedCategory,
         suggestedTags: c.suggestedTags,
+        chunkType: c.chunkType,
+        knowledgeType: c.knowledgeType,
+        reviewStatus: c.reviewStatus,
+        chunkStatus: c.chunkStatus,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
       })),
       errors: errors.length > 0 ? errors : undefined,
     },
   };
 }
 
-// ===== 候选知识 CRUD =====
+// ===== 候选知识 CRUD（操作 DocumentChunk where chunkType="knowledge"） =====
+
+function knowledgeWhere() {
+  return { chunkType: "knowledge" } as const;
+}
 
 export async function listCandidates() {
-  const items = await prisma.candidateKnowledge.findMany({
-    where: { status: "pending" },
+  const items = await prisma.documentChunk.findMany({
+    where: { chunkType: "knowledge", reviewStatus: "pending" },
     orderBy: { createdAt: "desc" },
   });
-  return items.map((c) => ({
-    id: c.id,
-    title: c.title,
-    content: c.content,
-    suggested_category: c.suggestedCategory,
-    suggested_tags: JSON.parse(c.suggestedTags || "[]"),
-    type: c.type,
-    status: c.status,
-    documentSourceId: c.documentSourceId,
-    created_at: c.createdAt.toISOString(),
-  }));
+  return items.map(mapKnowledgeChunkToCandidate);
 }
 
 export async function getCandidateById(id: string) {
-  return prisma.candidateKnowledge.findUnique({ where: { id } });
+  return prisma.documentChunk.findFirst({
+    where: { id, chunkType: "knowledge" },
+  });
 }
 
 export async function deleteCandidateById(id: string) {
-  const existing = await prisma.candidateKnowledge.findUnique({
-    where: { id },
+  const existing = await prisma.documentChunk.findFirst({
+    where: { id, chunkType: "knowledge" },
   });
   if (!existing) return null;
-  await prisma.candidateKnowledge.delete({ where: { id } });
+  await prisma.documentChunk.update({
+    where: { id },
+    data: { reviewStatus: "rejected", chunkStatus: "disabled" },
+  });
   return existing;
 }
 
 export async function listCandidatesByDocument(
   documentSourceId: string
 ) {
-  const items = await prisma.candidateKnowledge.findMany({
-    where: { documentSourceId },
+  const items = await prisma.documentChunk.findMany({
+    where: { documentSourceId, chunkType: "knowledge" },
     orderBy: { createdAt: "desc" },
   });
-  return items.map((c) => ({
-    id: c.id,
-    title: c.title,
-    content: c.content,
-    suggestedCategory: c.suggestedCategory,
-    suggestedTags: JSON.parse(c.suggestedTags || "[]"),
-    type: c.type,
-    status: c.status,
-    documentSourceId: c.documentSourceId,
-    createdAt: c.createdAt.toISOString(),
-    updatedAt: c.updatedAt.toISOString(),
-  }));
+  return items.map(mapKnowledgeChunkToCandidate);
 }
 
 export async function updateCandidate(
@@ -244,12 +265,12 @@ export async function updateCandidate(
     type?: string;
   }
 ) {
-  const existing = await prisma.candidateKnowledge.findUnique({
-    where: { id },
+  const existing = await prisma.documentChunk.findFirst({
+    where: { id, chunkType: "knowledge" },
   });
   if (!existing) return null;
 
-  return prisma.candidateKnowledge.update({
+  return prisma.documentChunk.update({
     where: { id },
     data: {
       ...(data.title !== undefined && { title: data.title }),
@@ -260,18 +281,134 @@ export async function updateCandidate(
       ...(data.suggestedTags !== undefined && {
         suggestedTags: JSON.stringify(data.suggestedTags),
       }),
-      ...(data.type !== undefined && { type: data.type }),
+      ...(data.type !== undefined && {
+        knowledgeType: data.type,
+      }),
       updatedAt: new Date(),
     },
   });
 }
 
-// ===== 确认入库 =====
+// ===== 确认入库（生成 embedding） =====
 
-export async function confirmCandidates(ids: string[]) {
-  const result = await prisma.candidateKnowledge.updateMany({
-    where: { id: { in: ids }, status: "pending" },
-    data: { status: "confirmed", updatedAt: new Date() },
+export async function confirmCandidates(ids: string[], knowledgeBaseIds: string[]) {
+  // 1. 更新状态为 confirmed + active
+  await prisma.documentChunk.updateMany({
+    where: {
+      id: { in: ids },
+      chunkType: "knowledge",
+      reviewStatus: "pending",
+    },
+    data: {
+      reviewStatus: "confirmed",
+      chunkStatus: "active",
+      updatedAt: new Date(),
+    },
   });
-  return result.count;
+
+  // 2. 查询更新后的 chunks 用于生成 embedding
+  const confirmedChunks = await prisma.documentChunk.findMany({
+    where: {
+      id: { in: ids },
+      chunkType: "knowledge",
+      reviewStatus: "confirmed",
+    },
+    include: {
+      documentSource: {
+        include: { knowledgeBases: true },
+      },
+    },
+  });
+
+  // 3. 确保文档已绑定到选中的知识库（跳过已存在的关联）
+  const docIds = [...new Set(confirmedChunks.map((c) => c.documentSourceId).filter((id): id is string => id !== null))];
+  if (docIds.length > 0) {
+    const existingRelations = await prisma.knowledgeBaseDocument.findMany({
+      where: {
+        documentId: { in: docIds },
+        knowledgeBaseId: { in: knowledgeBaseIds },
+      },
+      select: { documentId: true, knowledgeBaseId: true },
+    });
+    const existingPairs = new Set(
+      existingRelations.map((r) => `${r.documentId}:${r.knowledgeBaseId}`)
+    );
+    const missingPairs: { documentId: string; knowledgeBaseId: string }[] = [];
+    for (const docId of docIds) {
+      for (const kbId of knowledgeBaseIds) {
+        if (!existingPairs.has(`${docId}:${kbId}`)) {
+          missingPairs.push({ documentId: docId, knowledgeBaseId: kbId });
+        }
+      }
+    }
+    if (missingPairs.length > 0) {
+      await prisma.knowledgeBaseDocument.createMany({ data: missingPairs });
+    }
+  }
+
+  // 4. 映射为 RAG KnowledgeChunk 域类型并生成 embedding
+  if (confirmedChunks.length > 0) {
+    const ragChunks: KnowledgeChunk[] = confirmedChunks.map((chunk) => ({
+      id: chunk.id,
+      knowledgeBaseId: knowledgeBaseIds[0],
+      knowledgeId: chunk.documentSourceId ?? chunk.id,
+      title: chunk.title ?? chunk.documentSource?.title ?? "",
+      content: chunk.content,
+      summary: chunk.title ?? undefined,
+      status: "available",
+      sourceType: "import",
+      chunkType: "summary",
+      chunkIndex: chunk.chunkIndex,
+      metadata: {
+        suggestedCategory: chunk.suggestedCategory,
+        suggestedTags: chunk.suggestedTags,
+        reviewStatus: chunk.reviewStatus,
+      },
+      createdAt: chunk.createdAt.toISOString(),
+      updatedAt: chunk.updatedAt.toISOString(),
+    }));
+
+    await indexChunks(ragChunks);
+  }
+
+  return confirmedChunks.length;
+}
+
+// ===== 映射辅助 =====
+
+function mapKnowledgeChunkToCandidate(c: {
+  id: string;
+  documentSourceId: string | null;
+  title: string | null;
+  content: string;
+  suggestedCategory: string | null;
+  suggestedTags: string | null;
+  chunkType: string;
+  knowledgeType: string | null;
+  reviewStatus: string | null;
+  chunkStatus: string;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  let suggestedTags: string[] = [];
+  try {
+    suggestedTags = c.suggestedTags ? JSON.parse(c.suggestedTags) : [];
+  } catch {
+    suggestedTags = [];
+  }
+
+  // Use stored knowledgeType from AI extraction, fallback to chunkType
+  const type = c.knowledgeType || (c.chunkType === "knowledge" ? "concept" : c.chunkType);
+
+  return {
+    id: c.id,
+    title: c.title ?? c.content.slice(0, 50),
+    content: c.content,
+    suggested_category: c.suggestedCategory,
+    suggested_tags: suggestedTags,
+    type,
+    status: c.reviewStatus ?? c.chunkStatus,
+    documentSourceId: c.documentSourceId,
+    created_at: c.createdAt.toISOString(),
+  };
 }
