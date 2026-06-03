@@ -65,6 +65,11 @@ export const knowledgeBaseListQuerySchema = z.object({
   status: statusWithAllSchema.optional().default("all"),
 });
 
+export const knowledgeBaseKeywordSearchQuerySchema = z.object({
+  keyword: z.string().trim().min(1).max(50),
+  limit: z.coerce.number().int().min(1).max(30).optional().default(10),
+});
+
 export const documentListQuerySchema = z.object({
   keyword: z.string().trim().optional(),
   sourceType: sourceTypeWithAllSchema.optional().default("all"),
@@ -170,6 +175,9 @@ export type CreateKnowledgeBaseInput = z.infer<
 >;
 export type UpdateKnowledgeBaseInput = z.infer<
   typeof updateKnowledgeBaseSchema
+>;
+export type KnowledgeBaseKeywordSearchQuery = z.infer<
+  typeof knowledgeBaseKeywordSearchQuerySchema
 >;
 export type CreateDocumentSourceInput = z.infer<
   typeof createDocumentSourceSchema

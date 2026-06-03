@@ -38,16 +38,6 @@ export type KnowledgeTagFormValues = {
   sortOrder?: number;
 };
 
-/** 知识列表可筛选的状态枚举。 */
-export type KnowledgeStatusFilter = "available" | "pending" | "disabled";
-
-/** 知识列表筛选栏统一使用的受控值结构。 */
-export type KnowledgeFilterValue = {
-  categoryId?: string;
-  tagIds: string[];
-  status?: KnowledgeStatusFilter;
-};
-
 /** 最近搜索记录条目。 */
 export type RecentKnowledgeSearch = {
   keyword: string;
