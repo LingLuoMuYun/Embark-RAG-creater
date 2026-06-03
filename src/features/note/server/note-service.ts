@@ -139,7 +139,7 @@ export async function updateNoteService(id: string, input: UpdateNoteInput) {
     fileName?: string;
     rawContent?: string;
     fileSize?: number;
-    status?: "pending" | "parsed";
+    status?: "pending" | "uploaded";
   } = {};
 
   if (input.title !== undefined) {

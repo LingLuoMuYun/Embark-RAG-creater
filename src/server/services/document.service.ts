@@ -281,7 +281,11 @@ export async function listDocuments(options: DocumentListOptions = {}) {
   const { page = 1, pageSize = 20, status, hasCandidates } = options;
 
   const where: Prisma.DocumentSourceWhereInput = {};
-  if (status) where.status = status;
+  if (status) {
+    where.status = status;
+  } else {
+    where.status = { not: "pending" };
+  }
 
   if (hasCandidates) {
     const docIds = await prisma.documentChunk.findMany({
@@ -386,11 +390,21 @@ export async function parseDocument(
 
   try {
     onProgress?.("read", 10);
-    const filePath = path.join(UPLOAD_DIR, id);
-    const buffer = await fs.readFile(filePath);
 
     onProgress?.("parse", 30);
-    const rawContent = await parseFileContent(buffer, doc.fileType);
+
+    let rawContent: string;
+    if (doc.fileType === "note") {
+      rawContent = doc.rawContent ?? "";
+      if (!rawContent.trim()) {
+        throw new Error("笔记内容为空，无法解析");
+      }
+    } else {
+      const filePath = path.join(UPLOAD_DIR, id);
+      const buffer = await fs.readFile(filePath);
+      onProgress?.("parse", 30);
+      rawContent = await parseFileContent(buffer, doc.fileType);
+    }
 
     if (doc.rawContent === rawContent && doc.status === "parsed") {
       onProgress?.("done", 100);

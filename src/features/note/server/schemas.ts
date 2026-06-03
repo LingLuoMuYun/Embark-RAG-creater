@@ -13,7 +13,7 @@ export const updateNoteSchema = z
   .object({
     title: z.string().trim().min(1, "title is required").optional(),
     rawContent: z.string().optional(),
-    status: z.enum(["pending", "parsed"]).optional(),
+    status: z.enum(["pending", "uploaded"]).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: "Provide at least one field to update",
