@@ -225,8 +225,8 @@ function splitOversizedTable(
 
   const chunks: TextChunk[] = [];
   let currentRows = "";
-  let currentStart = startPos;
-  let posInTable = 0;
+  let currentStart = startPos + headerLength;
+  let posInData = headerLength; // position tracking includes header offset
 
   for (const row of dataLines) {
     const rowWithNewline = row + "\n";
@@ -235,14 +235,14 @@ function splitOversizedTable(
       chunks.push({
         content: (header + currentRows).trimEnd(),
         charStart: currentStart,
-        charEnd: startPos + posInTable,
+        charEnd: startPos + posInData,
       });
       currentRows = rowWithNewline;
-      currentStart = startPos + posInTable;
+      currentStart = startPos + posInData;
     } else {
       currentRows += rowWithNewline;
     }
-    posInTable += rowWithNewline.length;
+    posInData += rowWithNewline.length;
   }
 
   if (currentRows.trim()) {

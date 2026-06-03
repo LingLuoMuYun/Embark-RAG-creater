@@ -148,33 +148,49 @@ export function identifyFeishuUrl(input: string): FeishuUrlInfo {
  */
 export async function fetchFeishuDocContent(
   urlOrId: string,
-): Promise<{ title: string; content: string }> {
+): Promise<{ title: string; content: string; docType: FeishuDocType }> {
   const accessToken = await authenticate();
 
   const info = identifyFeishuUrl(urlOrId);
   if (!info.isFeishu) throw new Error("无效的飞书链接");
 
+  let result: { title: string; content: string };
+
   if (info.docType === "unknown") {
-    return fetchByUrlFallback(info.rawUrl, accessToken);
+    result = await fetchByUrlFallback(info.rawUrl, accessToken);
+  } else {
+    switch (info.docType) {
+      case "sheets":
+        result = await fetchSheetContent(info.token, accessToken);
+        break;
+      case "bitable":
+        result = await fetchBitableContent(info.token, accessToken);
+        break;
+      case "wiki":
+        result = await fetchWikiContent(info.token, accessToken);
+        break;
+      case "minutes":
+        result = await fetchMinutesContent(info.token, accessToken);
+        break;
+      default:
+        result = await fetchDocxContent(info.token, accessToken);
+        break;
+    }
   }
 
-  switch (info.docType) {
-    case "sheets":
-      return fetchSheetContent(info.token, accessToken);
-    case "bitable":
-      return fetchBitableContent(info.token, accessToken);
-    case "wiki":
-      return fetchWikiContent(info.token, accessToken);
-    case "minutes":
-      return fetchMinutesContent(info.token, accessToken);
-    default:
-      return fetchDocxContent(info.token, accessToken);
-  }
+  return { ...result, docType: info.docType };
 }
 
 // ── 鉴权 ────────────────────────────────────────────────
 
+let cachedToken: string | null = null;
+let tokenExpiry = 0;
+
 async function authenticate(): Promise<string> {
+  if (cachedToken && Date.now() < tokenExpiry) {
+    return cachedToken;
+  }
+
   const appId = process.env.FEISHU_APP_ID;
   const appSecret = process.env.FEISHU_APP_SECRET;
   if (!appId || !appSecret) throw new Error("未配置飞书应用凭证");
@@ -190,7 +206,10 @@ async function authenticate(): Promise<string> {
   if (data.code !== 0 || !data.tenant_access_token) {
     throw new Error(`飞书鉴权失败: ${data.msg ?? "unknown"}`);
   }
-  return data.tenant_access_token;
+
+  cachedToken = data.tenant_access_token;
+  tokenExpiry = Date.now() + 7200 * 1000; // 飞书 token 有效期 2 小时
+  return cachedToken;
 }
 
 // ── URL 兜底 ────────────────────────────────────────────
@@ -387,7 +406,7 @@ async function fetchBitableContent(
   for (const table of tables) {
     const tableName = table.name ?? "未命名数据表";
     const fieldNames = new Set<string>();
-    const records: string[][] = [];
+    const records: Array<Record<string, string>> = [];
 
     let pageToken: string | undefined;
     while (true) {
@@ -405,9 +424,11 @@ async function fetchBitableContent(
       for (const item of items) {
         const fields = item.fields ?? {};
         Object.keys(fields).forEach((k) => fieldNames.add(k));
-        records.push(
-          Object.keys(fields).map((k) => String(fields[k] ?? "")),
-        );
+        const row: Record<string, string> = {};
+        for (const [k, v] of Object.entries(fields)) {
+          row[k] = String(v ?? "");
+        }
+        records.push(row);
       }
 
       if (!recData.data?.has_more) break;
@@ -421,8 +442,8 @@ async function fetchBitableContent(
     lines.push(
       `| ${names.join(" | ")} |`,
       `| ${names.map(() => "---").join(" | ")} |`,
-      ...records.map((r) =>
-        `| ${names.map((_, i) => r[i] ?? "").join(" | ")} |`,
+      ...records.map((row) =>
+        `| ${names.map((n) => row[n] ?? "").join(" | ")} |`,
       ),
     );
     parts.push(lines.join("\n"));

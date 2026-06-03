@@ -148,8 +148,10 @@ export function DocumentPreview({ documentId, onClose }: DocumentPreviewProps) {
   const handleDeleteCandidate = async (id: string) => {
     if (!confirm("确定删除该知识条目？")) return;
     try {
-      await fetch(`/api/knowledge/candidates/${id}`, { method: "DELETE" });
-      setCandidates((prev) => prev.filter((c) => c.id !== id));
+      const res = await fetch(`/api/knowledge/candidates/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setCandidates((prev) => prev.filter((c) => c.id !== id));
+      }
     } catch { /* ignore */ }
   };
 
