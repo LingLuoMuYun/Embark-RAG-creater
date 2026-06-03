@@ -145,7 +145,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       return next;
     });
     const doneIds = new Set<string>();
-    let emptyPollCount = 0;
 
     const finish = () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -168,7 +167,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       if (!json.success) return;
 
       let hasNewDone = false;
-      let hasAnyData = false;
       setParseProgress((prev) => {
         const next = new Map(prev);
         for (const [id, p] of Object.entries(json.data) as [
@@ -176,7 +174,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
           ProgressInfo | undefined,
         ][]) {
           if (p) {
-            hasAnyData = true;
             next.set(id, p);
             if (p.percent >= 100 || p.stage === "done" || p.stage === "failed") {
               if (!doneIds.has(id)) hasNewDone = true;
@@ -186,17 +183,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
         }
         return next;
       });
-
-      // Fallback: if no progress data after 20 polls (10s), force refresh
-      if (!hasAnyData) {
-        emptyPollCount++;
-        if (emptyPollCount >= 20) {
-          finish();
-          return;
-        }
-      } else {
-        emptyPollCount = 0;
-      }
 
       // Refresh list immediately when any doc completes
       if (hasNewDone) {

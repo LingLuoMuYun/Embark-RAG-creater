@@ -6,7 +6,6 @@ import * as XLSX from "xlsx";
 const ALLOWED_TYPES = [
   "txt", "md", "csv", "xlsx", "doc", "docx", "pdf",
   "ppt", "pptx", "png", "jpg", "jpeg", "webp", "bmp",
-  "note",
 ] as const;
 export type AllowedFileType = (typeof ALLOWED_TYPES)[number];
 export const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
@@ -471,7 +470,6 @@ export async function parseFileContent(
   switch (fileType) {
     case "txt":
     case "md":
-    case "note":
       return decodeTextBuffer(buffer);
 
     case "csv": {
