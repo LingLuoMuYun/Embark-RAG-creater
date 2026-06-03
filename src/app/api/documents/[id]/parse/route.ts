@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { parseDocument } from "@/server/services/document.service";
 import { documentIdSchema } from "@/features/document/document.validation";
-import { setProgress } from "@/lib/parse-progress";
 
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
   try {
+    const { id } = await params;
     const parsed = documentIdSchema.safeParse({ id });
     if (!parsed.success) {
       return NextResponse.json(
@@ -18,10 +17,7 @@ export async function POST(
       );
     }
 
-    const result = await parseDocument(id, (stage, percent) => {
-      setProgress(id, stage, percent);
-    });
-
+    const result = await parseDocument(id);
     return NextResponse.json({
       success: true,
       data: {
@@ -31,7 +27,6 @@ export async function POST(
       },
     });
   } catch (error) {
-    setProgress(id, "failed", 100);
     const message = error instanceof Error ? error.message : "Parse failed";
     return NextResponse.json(
       { success: false, error: { code: "PARSE_ERROR", message } },

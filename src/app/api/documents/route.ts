@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 import {
   createDocument,
-  deleteDocument,
   listDocuments,
   saveDocumentFile,
   updateDocumentStatus,
@@ -68,20 +67,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Create the document record first
-    const buffer = Buffer.from(await file.arrayBuffer());
     const doc = await createDocument({
       originalName: file.name,
       fileType: parsed.data.fileType,
       fileSize: file.size,
     });
 
-    // Save file to disk; rollback document record on failure
-    try {
-      await saveDocumentFile(doc.id, buffer);
-    } catch (fileError) {
-      await deleteDocument(doc.id).catch(() => {});
-      throw fileError;
-    }
+    // Save file to disk
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await saveDocumentFile(doc.id, buffer);
 
     // Update status to uploaded (ready for parsing)
     await updateDocumentStatus(doc.id, "uploaded");

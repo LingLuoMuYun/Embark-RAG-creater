@@ -1,15 +1,12 @@
 import { z } from "zod";
 
-const ALLOWED_TYPES = ["txt", "md", "csv", "xlsx", "doc", "docx", "pdf", "ppt", "pptx", "png", "jpg", "jpeg", "webp", "bmp"] as const;
+const ALLOWED_TYPES = ["txt", "md", "csv", "xlsx", "docx", "pdf", "png", "jpg", "jpeg", "webp", "bmp"] as const;
 
 export const documentListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   status: z.enum(["uploading", "uploaded", "parsing", "parsed", "failed"]).optional(),
-  hasCandidates: z.preprocess(
-    (v) => v === "true" || v === true,
-    z.boolean().optional()
-  ),
+  hasCandidates: z.coerce.boolean().optional(),
 });
 
 export const documentIdSchema = z.object({

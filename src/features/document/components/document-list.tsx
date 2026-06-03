@@ -3,11 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface ProgressInfo {
-  stage: string;
-  percent: number;
-}
-
 interface DocumentItem {
   id: string;
   originalName: string;
@@ -75,7 +70,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
   const [extractMsg, setExtractMsg] = useState<string | null>(null);
   const [batchDeleting, setBatchDeleting] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
-  const [parseProgress, setParseProgress] = useState<Map<string, ProgressInfo>>(new Map());
 
   const someSelected = selected.size > 0 && selected.size < documents.length;
 
@@ -126,81 +120,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
     }
   }, [extractMsg]);
 
-  // Poll parse progress for documents in "parsing" state
-  const pollingRef = useRef(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    if (pollingRef.current) return;
-    const ids = documents
-      .filter((d) => d.status === "parsing")
-      .map((d) => d.id);
-    if (ids.length === 0) return;
-
-    pollingRef.current = true;
-    setParseProgress((prev) => {
-      const next = new Map(prev);
-      for (const id of ids) {
-        if (!next.has(id)) next.set(id, { stage: "开始", percent: 0 });
-      }
-      return next;
-    });
-    const doneIds = new Set<string>();
-
-    const finish = () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      pollingRef.current = false;
-      setParseProgress(new Map());
-      fetchDocuments();
-    };
-
-    const poll = async () => {
-      if (doneIds.size >= ids.length) {
-        finish();
-        return;
-      }
-
-      const res = await fetch(
-        `/api/documents/parse-progress?ids=${ids.join(",")}`
-      );
-      const json = await res.json();
-      if (!json.success) return;
-
-      let hasNewDone = false;
-      setParseProgress((prev) => {
-        const next = new Map(prev);
-        for (const [id, p] of Object.entries(json.data) as [
-          string,
-          ProgressInfo | undefined,
-        ][]) {
-          if (p) {
-            next.set(id, p);
-            if (p.percent >= 100 || p.stage === "done" || p.stage === "failed") {
-              if (!doneIds.has(id)) hasNewDone = true;
-              doneIds.add(id);
-            }
-          }
-        }
-        return next;
-      });
-
-      // Refresh list immediately when any doc completes
-      if (hasNewDone) {
-        fetchDocuments();
-        if (doneIds.size >= ids.length) {
-          finish();
-        }
-      }
-    };
-
-    poll();
-    intervalRef.current = setInterval(poll, 500);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      pollingRef.current = false;
-    };
-  }, [documents]);
-
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`确定删除「${name}」？`)) return;
     try {
@@ -212,11 +131,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
           if (next.length === 0 && page > 1) setPage(page - 1);
           return next;
         });
-        setSelected((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
+        setSelected((prev) => { prev.delete(id); return new Set(prev); });
       }
     } catch { /* ignore */ }
   };
@@ -312,16 +227,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       <div className="ml-auto flex items-center gap-2">
         {parseIds.length > 0 && (
           <button
-            onClick={() => {
-              setDocuments((prev) =>
-                prev.map((d) =>
-                  parseIds.includes(d.id)
-                    ? { ...d, status: "parsing" }
-                    : d
-                )
-              );
-              onParse(parseIds);
-            }}
+            onClick={() => { onParse(parseIds); }}
             disabled={batchDeleting}
             className="rounded px-2 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
           >
@@ -440,19 +346,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                       >
                         {statusDisplay.label}
                       </span>
-                      {doc.status === "parsing" && parseProgress.has(doc.id) && (
-                        <div className="mt-1">
-                          <div className="h-1 w-full rounded-full bg-zinc-100">
-                            <div
-                              className="h-1 rounded-full bg-blue-500 transition-all duration-300"
-                              style={{ width: `${parseProgress.get(doc.id)!.percent}%` }}
-                            />
-                          </div>
-                          <span className="mt-0.5 block text-[10px] text-zinc-400">
-                            {parseProgress.get(doc.id)!.stage}
-                          </span>
-                        </div>
-                      )}
                     </td>
                     <td className="px-3 py-3 text-zinc-500">
                       {formatDate(doc.createdAt)}
@@ -461,14 +354,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                       <div className="flex items-center gap-1.5">
                         {doc.status === "uploaded" && (
                           <button
-                            onClick={() => {
-                              setDocuments((prev) =>
-                                prev.map((d) =>
-                                  d.id === doc.id ? { ...d, status: "parsing" } : d
-                                )
-                              );
-                              onParse([doc.id]);
-                            }}
+                            onClick={() => onParse([doc.id])}
                             className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
                           >
                             解析
@@ -501,14 +387,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                         )}
                         {doc.status === "failed" && (
                           <button
-                            onClick={() => {
-                              setDocuments((prev) =>
-                                prev.map((d) =>
-                                  d.id === doc.id ? { ...d, status: "parsing" } : d
-                                )
-                              );
-                              onParse([doc.id]);
-                            }}
+                            onClick={() => onParse([doc.id])}
                             className="rounded px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50"
                           >
                             重新解析

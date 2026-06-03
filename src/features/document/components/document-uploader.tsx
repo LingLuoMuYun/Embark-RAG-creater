@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const ALLOWED_EXTENSIONS = ".txt,.md,.csv,.xlsx,.doc,.docx,.pdf,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.bmp";
-const ALLOWED_LIST = ["txt", "md", "csv", "xlsx", "doc", "docx", "pdf", "ppt", "pptx", "png", "jpg", "jpeg", "webp", "bmp"];
+const ALLOWED_EXTENSIONS = ".txt,.md,.csv,.xlsx,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp";
+const ALLOWED_LIST = ["txt", "md", "csv", "xlsx", "docx", "pdf", "png", "jpg", "jpeg", "webp", "bmp"];
 const MAX_SIZE_MB = 100;
 
 export function DocumentUploader({
@@ -27,7 +27,6 @@ export function DocumentUploader({
 
   const uploadFiles = useCallback(
     async (files: FileList | File[]) => {
-      clearTimeout(timerRef.current);
       const fileArray = Array.from(files);
       setTotal(fileArray.length);
       setDone(0);

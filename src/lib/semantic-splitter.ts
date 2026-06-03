@@ -42,11 +42,8 @@ function normalizeStructure(text: string): string {
  */
 export async function splitTextSemantic(
   text: string,
-  maxChunkSize = 2000,
-  _depth = 0,
+  maxChunkSize = 2000
 ): Promise<TextChunk[] | null> {
-  if (_depth >= 5) return null; // 递归深度限制，防止单句/重复文本无限递归
-
   try {
     const normalized = normalizeStructure(text);
     const sentences = splitSentences(normalized);
@@ -122,19 +119,11 @@ export async function splitTextSemantic(
       }
     }
 
-    // 超长 segment 递归语义切分，语义失败才回退到机械切分
+    // 超长 segment 二次切分
     const allChunks: TextChunk[] = [];
     let offset = 0;
     for (const seg of segments) {
-      let segChunks: TextChunk[];
-
-      if (seg.length > maxChunkSize) {
-        const recursive = await splitTextSemantic(seg, maxChunkSize, _depth + 1);
-        segChunks = recursive ?? splitTextIntoChunks(seg, { maxChunkSize });
-      } else {
-        segChunks = [{ content: seg, charStart: 0, charEnd: seg.length }];
-      }
-
+      const segChunks = splitTextIntoChunks(seg, { maxChunkSize });
       for (const c of segChunks) {
         allChunks.push({
           content: c.content,
