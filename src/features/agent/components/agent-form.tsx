@@ -4,10 +4,10 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { buildAgentSystemPrompt } from "@/features/agent/agent-prompt";
+import { KnowledgeBaseScopeSelect } from "@/features/agent/components/knowledge-base-scope-select";
 import {
   AGENT_CHUNK_TYPES,
   type AgentChunkType,
-  type AgentKnowledgeScope,
 } from "@/features/agent/agent.types";
 import {
   DEFAULT_AGENT_KNOWLEDGE_SCOPE,
@@ -79,38 +79,6 @@ const STATUS_OPTIONS = [
   { value: "disabled", label: "停用", description: "保留配置但不可使用。" },
 ];
 
-const SCOPE_MODE_OPTIONS = [
-  {
-    value: "all",
-    label: "全部知识",
-    description: "以知识库为边界聚合检索。",
-  },
-  {
-    value: "knowledgeBases",
-    label: "指定知识库",
-    description: "最稳妥的生产配置。",
-  },
-  {
-    value: "categories",
-    label: "指定分类",
-    description: "保留给知识库分类接入后使用。",
-  },
-  {
-    value: "tags",
-    label: "指定标签",
-    description: "适合主题型专家。",
-  },
-  {
-    value: "knowledgeItems",
-    label: "指定知识",
-    description: "适合小范围精确问答。",
-  },
-] satisfies Array<{
-  value: AgentKnowledgeScope["mode"];
-  label: string;
-  description: string;
-}>;
-
 const CHUNK_TYPE_LABELS: Record<AgentChunkType, string> = {
   text: "文本",
   wiki: "LLM Wiki",
@@ -137,6 +105,7 @@ function createDefaultValues(
     answerStyle: initialValues?.answerStyle ?? "strict",
     knowledgeScope: {
       ...DEFAULT_AGENT_KNOWLEDGE_SCOPE,
+      mode: "knowledgeBases",
       ...initialValues?.knowledgeScope,
       knowledgeBaseIds:
         initialValues?.knowledgeScope?.knowledgeBaseIds ??
@@ -161,27 +130,9 @@ function createDefaultValues(
   };
 }
 
-function parseIdList(value: string): string[] {
-  return Array.from(
-    new Set(
-      value
-        .split(/[\n,，\s]+/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-    )
-  );
-}
-
-function formatIdList(values: string[]): string {
-  return values.join("\n");
-}
-
 function buildLocalReadiness(values: AgentFormValues): ReadinessCheck[] {
   const scope = values.knowledgeScope;
   const hasKnowledgeBase = scope.knowledgeBaseIds.length > 0;
-  const hasFineScope =
-    scope.categoryIds.length + scope.tagIds.length + scope.knowledgeIds.length >
-    0;
 
   return [
     {
@@ -195,13 +146,6 @@ function buildLocalReadiness(values: AgentFormValues): ReadinessCheck[] {
       detail: hasKnowledgeBase
         ? `已绑定 ${scope.knowledgeBaseIds.length} 个知识库`
         : "RAG scope 至少需要一个知识库 ID",
-    },
-    {
-      label: "细分范围",
-      status: hasFineScope ? "pass" : "info",
-      detail: hasFineScope
-        ? "已配置分类、标签或指定知识"
-        : "未设置细分范围，将按知识库范围检索",
     },
     {
       label: "片段类型",
@@ -261,29 +205,34 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
     setValues((current) => ({ ...current, [key]: value }));
   };
 
-  const updateScope = <TKey extends keyof AgentKnowledgeScope>(
-    key: TKey,
-    value: AgentKnowledgeScope[TKey]
-  ) => {
+  const toggleChunkType = (type: AgentChunkType) => {
+    const current = values.knowledgeScope.chunkTypes;
+    const nextChunkTypes = current.includes(type)
+      ? current.filter((item) => item !== type)
+      : [...current, type];
+
+    setNotice(null);
+    setAvailability(null);
+    setValues((currentValues) => ({
+      ...currentValues,
+      knowledgeScope: {
+        ...currentValues.knowledgeScope,
+        chunkTypes: nextChunkTypes,
+      },
+    }));
+  };
+
+  const handleKnowledgeBaseIdsChange = (nextIds: string[]) => {
     setNotice(null);
     setAvailability(null);
     setValues((current) => ({
       ...current,
       knowledgeScope: {
         ...current.knowledgeScope,
-        [key]: value,
+        mode: "knowledgeBases",
+        knowledgeBaseIds: nextIds,
       },
     }));
-  };
-
-  const toggleChunkType = (type: AgentChunkType) => {
-    const current = values.knowledgeScope.chunkTypes;
-    updateScope(
-      "chunkTypes",
-      current.includes(type)
-        ? current.filter((item) => item !== type)
-        : [...current, type]
-    );
   };
 
   const handleValidate = async () => {
@@ -358,26 +307,16 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
       <div className="space-y-5">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2">
           <SummaryMetric
             label="知识库"
             value={values.knowledgeScope.knowledgeBaseIds.length}
             detail="检索边界"
           />
           <SummaryMetric
-            label="分类"
-            value={values.knowledgeScope.categoryIds.length}
-            detail="后续兼容"
-          />
-          <SummaryMetric
-            label="标签"
-            value={values.knowledgeScope.tagIds.length}
-            detail="主题过滤"
-          />
-          <SummaryMetric
-            label="指定知识"
-            value={values.knowledgeScope.knowledgeIds.length}
-            detail="精确范围"
+            label="片段类型"
+            value={values.knowledgeScope.chunkTypes.length}
+            detail="可选约束"
           />
         </div>
 
@@ -433,71 +372,13 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
         <FormSection
           index="02"
           title="知识边界"
-          description="先用通用 scope 存配置，等知识库/LLM Wiki 接入后可直接转换给 RAG。"
+          description="当前只做粗粒度知识库绑定，分类、标签和指定知识暂不开放配置。"
         >
           <div className="space-y-5">
-            <div>
-              <span className="mb-2 block text-sm font-medium text-zinc-800">
-                范围模式
-              </span>
-              <div className="grid gap-2 md:grid-cols-5">
-                {SCOPE_MODE_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => updateScope("mode", option.value)}
-                    className={`min-h-24 rounded-lg border p-3 text-left transition-colors ${
-                      values.knowledgeScope.mode === option.value
-                        ? "border-cyan-500 bg-cyan-50 text-cyan-900"
-                        : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
-                    }`}
-                  >
-                    <span className="block text-sm font-semibold">
-                      {option.label}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-zinc-500">
-                      {option.description}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <ScopeBucket
-              label="知识库 ID"
-              badge="必填"
-              description="当前没有知识库选择接口，先粘贴 ID；后续可替换为选择器。"
-              placeholder="每行一个知识库 ID"
-              values={values.knowledgeScope.knowledgeBaseIds}
-              onChange={(next) => updateScope("knowledgeBaseIds", next)}
+            <KnowledgeBaseScopeSelect
+              value={values.knowledgeScope.knowledgeBaseIds}
+              onChange={handleKnowledgeBaseIdsChange}
             />
-
-            <div className="grid gap-3 xl:grid-cols-3">
-              <ScopeBucket
-                label="分类 ID"
-                badge="可选"
-                description="对应 RagRetrieveRequest.scope.categoryIds。"
-                placeholder="每行一个分类 ID"
-                values={values.knowledgeScope.categoryIds}
-                onChange={(next) => updateScope("categoryIds", next)}
-              />
-              <ScopeBucket
-                label="标签 ID"
-                badge="可选"
-                description="对应 RagRetrieveRequest.scope.tagIds。"
-                placeholder="每行一个标签 ID"
-                values={values.knowledgeScope.tagIds}
-                onChange={(next) => updateScope("tagIds", next)}
-              />
-              <ScopeBucket
-                label="指定知识 ID"
-                badge="可选"
-                description="对应 RagRetrieveRequest.scope.knowledgeIds。"
-                placeholder="每行一个知识 ID"
-                values={values.knowledgeScope.knowledgeIds}
-                onChange={(next) => updateScope("knowledgeIds", next)}
-              />
-            </div>
 
             <div>
               <span className="mb-2 block text-sm font-medium text-zinc-800">
@@ -698,42 +579,6 @@ function OptionGrid({
   );
 }
 
-function ScopeBucket({
-  label,
-  badge,
-  description,
-  placeholder,
-  values,
-  onChange,
-}: {
-  label: string;
-  badge: string;
-  description: string;
-  placeholder: string;
-  values: string[];
-  onChange: (values: string[]) => void;
-}) {
-  return (
-    <label className="block rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-      <span className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-zinc-800">{label}</span>
-        <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs text-zinc-500">
-          {badge} · {values.length}
-        </span>
-      </span>
-      <span className="mb-2 block text-xs leading-5 text-zinc-500">
-        {description}
-      </span>
-      <textarea
-        value={formatIdList(values)}
-        onChange={(event) => onChange(parseIdList(event.target.value))}
-        className={`${INPUT_CLASS} min-h-24 resize-y py-2 font-mono text-xs leading-5`}
-        placeholder={placeholder}
-      />
-    </label>
-  );
-}
-
 function TogglePanel({
   title,
   description,
@@ -858,23 +703,25 @@ function PromptPreviewPanel({ prompt }: { prompt: string }) {
   };
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-950 p-5 text-white shadow-sm">
+    <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">System Prompt</h2>
-          <p className="mt-1 text-xs text-zinc-400">
+          <h2 className="text-base font-semibold text-zinc-950">
+            System Prompt
+          </h2>
+          <p className="mt-1 text-xs text-zinc-500">
             保存时同步写入 Agent 配置。
           </p>
         </div>
         <button
           type="button"
           onClick={copyPrompt}
-          className="rounded-md border border-white/15 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:bg-white/10"
+          className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
         >
           {copied ? "已复制" : "复制"}
         </button>
       </div>
-      <pre className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-md border border-white/10 bg-black/30 p-4 text-xs leading-6 text-zinc-200">
+      <pre className="max-h-[560px] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-4 text-xs leading-6 text-zinc-700">
         {prompt}
       </pre>
     </div>
