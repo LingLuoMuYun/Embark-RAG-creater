@@ -122,7 +122,7 @@ export async function createNoteService(input: CreateNoteInput) {
       sourceType: "markdown",
       rawContent,
       status: "pending",
-      activeStatus: "active",
+      activeStatus: "disabled",
       chunkCount: 0,
     },
   });
@@ -139,7 +139,8 @@ export async function updateNoteService(id: string, input: UpdateNoteInput) {
     fileName?: string;
     rawContent?: string;
     fileSize?: number;
-    status?: "pending" | "parsed";
+    status?: "pending" | "parsed" | "uploaded";
+    activeStatus?: "active" | "disabled";
   } = {};
 
   if (input.title !== undefined) {
@@ -158,10 +159,26 @@ export async function updateNoteService(id: string, input: UpdateNoteInput) {
     data.status = input.status;
   }
 
+  if (input.activeStatus !== undefined) {
+    data.activeStatus = input.activeStatus;
+  }
+
   const note = await prisma.documentSource.update({
     where: { id },
     data,
   });
+
+  if (input.activeStatus === "disabled") {
+    await prisma.documentChunk.updateMany({
+      where: { documentSourceId: id },
+      data: { chunkStatus: "disabled" },
+    });
+  } else if (input.activeStatus === "active") {
+    await prisma.documentChunk.updateMany({
+      where: { documentSourceId: id },
+      data: { chunkStatus: "active" },
+    });
+  }
 
   return mapNoteDetail(note);
 }

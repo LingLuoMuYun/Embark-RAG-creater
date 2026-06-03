@@ -6,9 +6,17 @@ import * as XLSX from "xlsx";
 const ALLOWED_TYPES = [
   "txt", "md", "csv", "xlsx", "doc", "docx", "pdf",
   "ppt", "pptx", "png", "jpg", "jpeg", "webp", "bmp",
+  "note",
 ] as const;
 export type AllowedFileType = (typeof ALLOWED_TYPES)[number];
 export const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+export interface DocImage {
+  index: number;
+  buffer: Buffer;
+  mimeType: string;
+  placeholder: string;
+}
 
 const ENCODING_FALLBACKS = ["GBK", "GB2312", "BIG5", "SHIFT_JIS"];
 
@@ -255,7 +263,8 @@ function parseXlsxSheet(
 
 export async function parseFileContent(
   buffer: Buffer,
-  fileType: AllowedFileType
+  fileType: AllowedFileType,
+  onImage?: (img: DocImage) => void
 ): Promise<string> {
   switch (fileType) {
     case "txt":
@@ -282,16 +291,152 @@ export async function parseFileContent(
     }
 
     case "docx": {
-      const result = await mammoth.extractRawText({ buffer });
-      return result.value;
+      const images: DocImage[] = [];
+      const result = await (mammoth as unknown as { convertToMarkdown: typeof mammoth.convertToHtml }).convertToMarkdown(
+        { buffer },
+        onImage
+          ? {
+              convertImage: mammoth.images.imgElement(
+                async (image: { contentType: string; readAsBase64String: () => Promise<string>; readAsBuffer: () => Promise<Buffer> }) => {
+                  const idx = images.length;
+                  const placeholder = `__DOCX_IMAGE_${idx}__`;
+                  const imgBuffer = await image.readAsBuffer();
+                  images.push({
+                    index: idx,
+                    buffer: imgBuffer,
+                    mimeType: image.contentType,
+                    placeholder,
+                  });
+                  return { src: placeholder };
+                }
+              ),
+            }
+          : undefined
+      );
+      let text = result.value;
+      // Replace markdown image refs with readable placeholders
+      for (const img of images) {
+        text = text.replace(
+          `![](${img.placeholder})`,
+          `[Image ${img.index + 1}: pending description]`
+        );
+        onImage?.(img);
+      }
+      return text;
     }
 
     case "pdf": {
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: buffer });
-      const textResult = await parser.getText();
+
+      const [textResult, tableResult, imageResult] = await Promise.all([
+        parser.getText(),
+        parser.getTable().catch(() => null),
+        parser.getImage({ imageThreshold: 100 }).catch(() => null),
+      ]);
+
+      let output = textResult.text;
+
+      // Append extracted tables
+      if (tableResult && tableResult.total > 0) {
+        const tableSections: string[] = [];
+        for (const page of tableResult.pages) {
+          for (let t = 0; t < page.tables.length; t++) {
+            const table = page.tables[t];
+            if (table && table.length >= 2) {
+              tableSections.push(
+                `**Page ${page.num} Table ${t + 1}**\n\n${rowsToMarkdownTable(table)}`
+              );
+            }
+          }
+        }
+        if (tableSections.length > 0) {
+          output += "\n\n" + tableSections.join("\n\n");
+        }
+      }
+
+      // Extract images for async processing
+      if (imageResult && imageResult.total > 0 && onImage) {
+        let imageIdx = 0;
+        for (const page of imageResult.pages) {
+          for (const img of page.images) {
+            if (!img.data) continue;
+            const mimeMatch = img.dataUrl?.match(/data:(image\/[^;]+);/);
+            const mimeType = mimeMatch?.[1] ?? "image/png";
+            const placeholder = `__PDF_IMAGE_${imageIdx}__`;
+            output += `\n\n[Image ${imageIdx + 1}: pending description]`;
+            onImage({
+              index: imageIdx,
+              buffer: Buffer.from(img.data),
+              mimeType,
+              placeholder,
+            });
+            imageIdx++;
+          }
+        }
+      }
+
       await parser.destroy();
-      return textResult.text;
+      return output;
+    }
+
+    case "doc": {
+      const wordExtractor = await import("word-extractor");
+      const WordExtractor = (wordExtractor as unknown as { default: new () => { extract: (buf: Buffer) => Promise<{ getBody: () => string }> } }).default;
+      const extractor = new WordExtractor();
+      const doc = await extractor.extract(buffer);
+      return doc.getBody();
+    }
+
+    case "pptx": {
+      const jszip = await import("jszip");
+      const JSZip = jszip.default;
+      const zip = await JSZip.loadAsync(buffer);
+
+      const slideFiles = Object.keys(zip.files)
+        .filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+        .sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)![0], 10);
+          const numB = parseInt(b.match(/\d+/)![0], 10);
+          return numA - numB;
+        });
+
+      const parts: string[] = [];
+      for (let i = 0; i < slideFiles.length; i++) {
+        const xmlContent = await zip.files[slideFiles[i]].async("text");
+        const texts = [...xmlContent.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)];
+        const slideText = texts.map((m) => m[1]).join("").trim();
+        if (slideText) {
+          parts.push(`## Slide ${i + 1}\n\n${slideText}`);
+        }
+      }
+
+      // Also extract speaker notes
+      const notesFiles = Object.keys(zip.files)
+        .filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(name))
+        .sort((a, b) => {
+          const numA = parseInt(a.match(/\d+/)![0], 10);
+          const numB = parseInt(b.match(/\d+/)![0], 10);
+          return numA - numB;
+        });
+
+      for (const notesFile of notesFiles) {
+        const xmlContent = await zip.files[notesFile].async("text");
+        const texts = [...xmlContent.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)];
+        const notesText = texts.map((m) => m[1]).join("").trim();
+        if (notesText) {
+          const slideNum = notesFile.match(/\d+/)![0];
+          parts.push(`## Slide ${slideNum} Notes\n\n${notesText}`);
+        }
+      }
+
+      return parts.join("\n\n") || "[PPTX: No text content found]";
+    }
+
+    case "ppt": {
+      throw new Error(
+        "旧的 .ppt 格式暂不支持，请将文件转换为 .pptx 格式后重新上传。"
+      );
     }
 
     case "png":

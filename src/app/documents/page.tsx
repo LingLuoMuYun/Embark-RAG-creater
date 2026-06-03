@@ -15,6 +15,7 @@ export default function DocumentsPage() {
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [parseLoading, setParseLoading] = useState(false);
   const [parseCount, setParseCount] = useState(0);
+  const [parsingIds, setParsingIds] = useState<string[]>([]);
 
   const handleUploaded = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -38,7 +39,7 @@ export default function DocumentsPage() {
   const handleParse = useCallback(async (ids: string[]) => {
     setParseLoading(true);
     setParseCount(ids.length);
-    // 立即刷新列表，让"解析中"状态显示出来
+    setParsingIds(ids);
     setRefreshKey((k) => k + 1);
     try {
       await Promise.all(
@@ -48,6 +49,7 @@ export default function DocumentsPage() {
       // error handled by list refresh
     } finally {
       setParseLoading(false);
+      setParsingIds([]);
       setRefreshKey((k) => k + 1);
     }
   }, []);
@@ -81,7 +83,7 @@ export default function DocumentsPage() {
         <div className="bg-white border border-gray-200 rounded-lg p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">上传文件</h2>
           <p className="text-sm text-gray-500 mb-3">
-            支持 .txt .md .csv .xlsx .docx .pdf .png .jpg .jpeg .webp .bmp
+            支持 .txt .md .csv .xlsx .doc .docx .pdf .ppt .pptx .png .jpg .jpeg .webp .bmp
             格式，最大 100MB
           </p>
           <DocumentUploader onUploaded={handleUploaded} />
@@ -101,6 +103,7 @@ export default function DocumentsPage() {
           </div>
           <DocumentList
             refreshKey={refreshKey}
+            parsingIds={parsingIds}
             onParse={handleParse}
             onPreview={handlePreview}
           />

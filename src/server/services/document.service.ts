@@ -13,6 +13,7 @@ import {
 import { splitTextIntoChunks } from "@/lib/text-splitter";
 import { splitTextSemantic } from "@/lib/semantic-splitter";
 import type { TextChunk } from "@/lib/text-splitter";
+import type { DocImage } from "@/lib/file-parser";
 import { badRequest, notFound } from "@/features/knowledge-bases/server/errors";
 import {
   mapDocumentChunk,
@@ -60,6 +61,55 @@ async function deleteEmbeddingsForDocumentChunks(documentSourceId: string) {
   });
 
   await deleteChunkEmbeddings(chunks.map((chunk) => chunk.id));
+}
+
+async function processDocumentImages(
+  documentId: string,
+  images: DocImage[]
+): Promise<void> {
+  const { chatWithVision } = await import("@/lib/ai-extract");
+  const { IMAGE_DESCRIPTION_PROMPT } = await import("@/lib/prompts/extraction");
+
+  const results = await Promise.allSettled(
+    images.map(async (img) => {
+      try {
+        const description = await chatWithVision(
+          img.buffer,
+          img.mimeType,
+          IMAGE_DESCRIPTION_PROMPT
+        );
+        return { placeholder: img.placeholder, description };
+      } catch {
+        return { placeholder: img.placeholder, description: "[Image: could not describe]" };
+      }
+    })
+  );
+
+  // Update rawContent with image descriptions
+  const doc = await prisma.documentSource.findUnique({
+    where: { id: documentId },
+    select: { rawContent: true },
+  });
+
+  if (doc?.rawContent) {
+    let updatedContent = doc.rawContent;
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        updatedContent = updatedContent.replace(
+          `[Image ${images.find((i) => i.placeholder === result.value.placeholder)!.index + 1}: pending description]`,
+          `[Image: ${result.value.description.slice(0, 500)}]`
+        );
+      }
+    }
+
+    await prisma.documentSource.update({
+      where: { id: documentId },
+      data: { rawContent: updatedContent },
+    });
+
+    // Re-index to include image descriptions
+    await reindexRetrievableDocumentChunks(documentId);
+  }
 }
 
 async function listDocumentRagChunksForIndex(documentSourceId: string) {
@@ -265,7 +315,9 @@ export async function getDocumentById(id: string) {
 export async function listDocuments(options: DocumentListOptions = {}) {
   const { page = 1, pageSize = 20, status, hasCandidates } = options;
 
-  const where: Prisma.DocumentSourceWhereInput = {};
+  const where: Prisma.DocumentSourceWhereInput = {
+    activeStatus: "active",
+  };
   if (status) where.status = status;
 
   if (hasCandidates) {
@@ -360,20 +412,44 @@ export async function parseDocument(
 }> {
   const doc = await prisma.documentSource.findUnique({ where: { id } });
   if (!doc) throw new Error(`Document not found: ${id}`);
-  if (!validateFileType(doc.fileType)) {
+  if (doc.fileType !== "note" && !validateFileType(doc.fileType)) {
     throw new Error(`Unsupported file type: ${doc.fileType}`);
   }
+
+  const isNote = doc.fileType === "note";
 
   onProgress?.("start", 0);
   await updateDocumentStatus(id, "parsing");
 
   try {
-    onProgress?.("read", 10);
-    const filePath = path.join(UPLOAD_DIR, id);
-    const buffer = await fs.readFile(filePath);
+    let rawContent: string;
+    const docImages: DocImage[] = [];
 
-    onProgress?.("parse", 30);
-    const rawContent = await parseFileContent(buffer, doc.fileType);
+    if (isNote) {
+      // Notes have rawContent in DB, no file on disk — parse as markdown
+      onProgress?.("parse", 30);
+      rawContent = doc.rawContent ?? "";
+    } else {
+      onProgress?.("read", 10);
+      const filePath = path.join(UPLOAD_DIR, id);
+
+      let fileExists = true;
+      try {
+        await fs.access(filePath);
+      } catch {
+        fileExists = false;
+      }
+
+      if (!fileExists && doc.rawContent) {
+        // File missing but rawContent exists in DB (e.g., re-parse after cleanup)
+        onProgress?.("parse", 30);
+        rawContent = doc.rawContent;
+      } else {
+        const buffer = await fs.readFile(filePath);
+        onProgress?.("parse", 30);
+        rawContent = await parseFileContent(buffer, doc.fileType, (img) => docImages.push(img));
+      }
+    }
 
     if (doc.rawContent === rawContent && doc.status === "parsed") {
       onProgress?.("done", 100);
@@ -398,6 +474,13 @@ export async function parseDocument(
 
     onProgress?.("save", 80);
     await replaceTextChunksAndIndex(id, chunks, { rawContent });
+
+    // Async image processing — fire and forget
+    if (docImages.length > 0) {
+      processDocumentImages(id, docImages).catch((err) =>
+        console.error("Async image processing failed:", err)
+      );
+    }
 
     onProgress?.("done", 100);
     return { rawContent, chunkCount: chunks.length };

@@ -40,7 +40,7 @@ export function NoteFeature() {
 
   const busy =
     loading || detailLoading || saving || deleting || sourceToggleSaving;
-  const sourceEnabled = activeNote?.status === "parsed";
+  const sourceEnabled = activeNote?.activeStatus === "active";
 
   const applyActiveNote = React.useCallback((note: NoteDetail | null) => {
     setActiveNote(note);
@@ -216,7 +216,8 @@ export function NoteFeature() {
 
     try {
       const updatedNote = await updateNote(activeNote.id, {
-        status: enabled ? "parsed" : "pending",
+        status: enabled ? "uploaded" : "pending",
+        activeStatus: enabled ? "active" : "disabled",
       });
 
       applyActiveNote(updatedNote);

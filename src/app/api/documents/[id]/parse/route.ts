@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { parseDocument } from "@/server/services/document.service";
+import { setProgress } from "@/lib/parse-progress";
 import { documentIdSchema } from "@/features/document/components/document.validation";
 
 export async function POST(
@@ -17,7 +18,7 @@ export async function POST(
       );
     }
 
-    const result = await parseDocument(id);
+    const result = await parseDocument(id, (stage, percent) => setProgress(id, stage, percent));
     return NextResponse.json({
       success: true,
       data: {

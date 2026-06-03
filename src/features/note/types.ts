@@ -23,7 +23,8 @@ export type CreateNoteInput = {
 export type UpdateNoteInput = {
   title?: string;
   rawContent?: string;
-  status?: "pending" | "parsed";
+  status?: "pending" | "parsed" | "uploaded";
+  activeStatus?: "active" | "disabled";
 };
 
 export type NotePageState = {

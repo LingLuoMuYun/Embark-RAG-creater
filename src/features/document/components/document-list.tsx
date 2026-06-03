@@ -57,11 +57,12 @@ function getStatusDisplay(status: string) {
 
 interface DocumentListProps {
   refreshKey: number;
+  parsingIds: string[];
   onParse: (ids: string[]) => void;
   onPreview: (id: string) => void;
 }
 
-export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListProps) {
+export function DocumentList({ refreshKey, parsingIds, onParse, onPreview }: DocumentListProps) {
   const router = useRouter();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,14 +129,16 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
     }
   }, [extractMsg]);
 
-  // Poll parse progress for documents in "parsing" state
+  // Poll parse progress for documents in "parsing" state, plus parsingIds from parent
   const pollingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     if (pollingRef.current) return;
-    const ids = documents
+    const statusIds = documents
       .filter((d) => d.status === "parsing")
       .map((d) => d.id);
+    // Merge with parsingIds from parent (for batch parse, before server status updates)
+    const ids = [...new Set([...statusIds, ...parsingIds])];
     if (ids.length === 0) return;
 
     pollingRef.current = true;
@@ -201,7 +204,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
       if (intervalRef.current) clearInterval(intervalRef.current);
       pollingRef.current = false;
     };
-  }, [documents]);
+  }, [documents, parsingIds]);
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`确定删除「${name}」？`)) return;
@@ -374,7 +377,9 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {documents.map((doc) => {
-                const statusDisplay = getStatusDisplay(doc.status);
+                const isActivelyParsing = parsingIds.includes(doc.id);
+                const effectiveStatus = isActivelyParsing ? "parsing" : doc.status;
+                const statusDisplay = getStatusDisplay(effectiveStatus);
                 const hasCandidates = doc.candidatePending > 0 || doc.candidateConfirmed > 0;
                 return (
                   <tr key={doc.id} className="hover:bg-zinc-50">
@@ -396,9 +401,9 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                       {formatFileSize(doc.fileSize)}
                     </td>
                     <td className="px-3 py-3 text-zinc-500">
-                      {doc.status === "parsed" && doc.chunkCount > 0
+                      {effectiveStatus === "parsed" && doc.chunkCount > 0
                         ? `${doc.chunkCount} 段`
-                        : doc.status === "parsing"
+                        : effectiveStatus === "parsing"
                           ? "..."
                           : "-"}
                     </td>
@@ -429,7 +434,7 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                       >
                         {statusDisplay.label}
                       </span>
-                      {doc.status === "parsing" && parseProgress.has(doc.id) ? (
+                      {effectiveStatus === "parsing" && parseProgress.has(doc.id) ? (
                         <div className="mt-1">
                           <div className="h-1 w-full rounded-full bg-zinc-100">
                             <div
@@ -450,15 +455,15 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
-                        {doc.status === "uploaded" && (
+                        {effectiveStatus !== "parsing" && effectiveStatus !== "parsed" && (
                           <button
                             onClick={() => onParse([doc.id])}
                             className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
                           >
-                            解析
+                            {doc.status === "failed" ? "重新解析" : "解析"}
                           </button>
                         )}
-                        {doc.status === "parsed" && (
+                        {effectiveStatus === "parsed" && (
                           <>
                             <button
                               onClick={() => onPreview(doc.id)}
@@ -482,14 +487,6 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
                               </button>
                             )}
                           </>
-                        )}
-                        {doc.status === "failed" && (
-                          <button
-                            onClick={() => onParse([doc.id])}
-                            className="rounded px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50"
-                          >
-                            重新解析
-                          </button>
                         )}
                         <button
                           onClick={() => handleDelete(doc.id, doc.originalName)}

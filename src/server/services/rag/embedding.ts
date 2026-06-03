@@ -3,6 +3,7 @@ import type { KnowledgeChunk } from "@/features/rag/types";
 export const DEFAULT_EMBEDDING_MODEL = "voyage-3.5";
 const VOYAGE_EMBEDDINGS_ENDPOINT = "https://api.voyageai.com/v1/embeddings";
 const VOYAGE_BATCH_SIZE = 64;
+const MAX_RETRIES = 3;
 
 export type EmbeddingVector = number[];
 type EmbeddingInputType = "query" | "document";
@@ -25,7 +26,21 @@ export async function embedQuery(query: string): Promise<EmbeddingVector> {
 export async function embedChunks(
   chunks: KnowledgeChunk[]
 ): Promise<EmbeddingVector[]> {
-  return embedTexts(chunks.map(getChunkEmbeddingText), "document");
+  const texts = chunks.map(getChunkEmbeddingText);
+  // 解析管线：VoyageAI 失败时用 DashScope 兜底
+  try {
+    return await embedTexts(texts, "document");
+  } catch (voyageError) {
+    console.warn(
+      "VoyageAI embeddings failed for chunk indexing, falling back to DashScope:",
+      voyageError instanceof Error ? voyageError.message : voyageError
+    );
+    const { batchEmbedTexts } = await import("@/lib/embedding");
+    const results = await batchEmbedTexts(texts);
+    return results
+      .sort((a, b) => a.textIndex - b.textIndex)
+      .map((r) => r.embedding);
+  }
 }
 
 export function getEmbeddingModel() {
@@ -59,7 +74,6 @@ async function embedTexts(
     const batch = texts.slice(start, start + VOYAGE_BATCH_SIZE);
     embeddings.push(...(await requestVoyageEmbeddings(batch, inputType)));
   }
-
   return embeddings;
 }
 
@@ -74,39 +88,57 @@ async function requestVoyageEmbeddings(
     );
   }
 
-  const response = await fetch(VOYAGE_EMBEDDINGS_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      input: texts,
-      model: getEmbeddingModel(),
-      input_type: inputType,
-    }),
-  });
+  let lastError: Error | null = null;
 
-  const responseText = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `Voyage embeddings API 调用失败：HTTP ${response.status} ${truncate(
-        responseText
-      )}`
-    );
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      // Exponential backoff: 2s, 4s, 8s
+      const delay = Math.pow(2, attempt) * 1000;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+
+    const response = await fetch(VOYAGE_EMBEDDINGS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        input: texts,
+        model: getEmbeddingModel(),
+        input_type: inputType,
+      }),
+    });
+
+    const responseText = await response.text();
+
+    if (!response.ok) {
+      lastError = new Error(
+        `Voyage embeddings API 调用失败：HTTP ${response.status} ${truncate(
+          responseText
+        )}`
+      );
+      // Retry on rate limit (429) or server errors (5xx)
+      if (response.status === 429 || response.status >= 500) {
+        continue;
+      }
+      throw lastError;
+    }
+
+    const parsed = parseVoyageResponse(responseText);
+    const items = parsed.data;
+    if (!items || items.length !== texts.length) {
+      throw new Error(
+        `Voyage embeddings API 返回数量异常：expected ${texts.length}, received ${
+          items?.length ?? 0
+        }`
+      );
+    }
+
+    return normalizeVoyageItems(items, texts.length);
   }
 
-  const parsed = parseVoyageResponse(responseText);
-  const items = parsed.data;
-  if (!items || items.length !== texts.length) {
-    throw new Error(
-      `Voyage embeddings API 返回数量异常：expected ${texts.length}, received ${
-        items?.length ?? 0
-      }`
-    );
-  }
-
-  return normalizeVoyageItems(items, texts.length);
+  throw lastError ?? new Error("Voyage embeddings API 请求失败，已达最大重试次数。");
 }
 
 function parseVoyageResponse(responseText: string): VoyageEmbeddingResponse {
