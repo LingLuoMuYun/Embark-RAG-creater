@@ -46,6 +46,27 @@ export type DashboardInsight = {
   variant?: "empty";
 };
 
+export type SourceDistributionItem = {
+  sourceType: string;
+  label: string;
+  count: number;
+};
+
+export type PendingWorkload = {
+  pendingDocuments: number;
+  failedDocuments: number;
+  pendingKnowledge: number;
+};
+
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  manual: "手动",
+  file: "文件",
+  url: "链接",
+  text: "文本",
+  markdown: "Markdown",
+  image: "图片",
+};
+
 function toReferenceKey(reference: {
   knowledgeBaseId: string;
   knowledgeId: string;
@@ -151,6 +172,26 @@ function fallbackKnowledgeTitle(chunk: {
   content: string;
 }): string {
   return chunk.title ?? chunk.content.slice(0, 40);
+}
+
+async function getSourceDistribution(): Promise<SourceDistributionItem[]> {
+  const groups = await prisma.documentSource.groupBy({
+    by: ["sourceType"],
+    _count: {
+      sourceType: true,
+    },
+    orderBy: {
+      _count: {
+        sourceType: "desc",
+      },
+    },
+  });
+
+  return groups.map((group) => ({
+    sourceType: group.sourceType,
+    label: SOURCE_TYPE_LABELS[group.sourceType] ?? group.sourceType,
+    count: group._count.sourceType,
+  }));
 }
 
 async function getRecentAgents(limit = RECENT_AGENT_LIMIT): Promise<DashboardAgent[]> {
@@ -468,6 +509,7 @@ export async function getAnalyticsOverview() {
     totalDocuments,
     parsedDocuments,
     failedDocuments,
+    pendingDocuments,
     documentChunks,
     knowledgeBases,
     knowledgeDocuments,
@@ -486,7 +528,7 @@ export async function getAnalyticsOverview() {
     knowledgeGaps,
     pendingKnowledge,
     recentKnowledge,
-    categoryDistribution,
+    sourceDistribution,
     recentAgents,
     topAgentUsageGroups,
   ] = await Promise.all([
@@ -496,6 +538,14 @@ export async function getAnalyticsOverview() {
     prisma.documentSource.count({ where: { status: "parsed" } }),
     // Failed documents can directly drive a next-step insight.
     prisma.documentSource.count({ where: { status: "failed" } }),
+    // Pending documents are still moving through import / parsing.
+    prisma.documentSource.count({
+      where: {
+        status: {
+          in: ["uploading", "uploaded", "pending", "parsing"],
+        },
+      },
+    }),
     // Document chunks: unified DocumentChunk table.
     prisma.documentChunk.count(),
     // Knowledge bases: KnowledgeBase table.
@@ -581,7 +631,7 @@ export async function getAnalyticsOverview() {
       },
     }),
     getRecentKnowledge(RECENT_KNOWLEDGE_LIMIT),
-    getCategoryDistribution(),
+    getSourceDistribution(),
     getRecentAgents(RECENT_AGENT_LIMIT),
     prisma.agentConversation.groupBy({
       by: ["agentId"],
@@ -635,6 +685,11 @@ export async function getAnalyticsOverview() {
       noHitQueries,
       pendingKnowledge,
     },
+    pendingWorkload: {
+      pendingDocuments,
+      failedDocuments,
+      pendingKnowledge,
+    },
     statusBreakdown: {
       documents: normalizeStatusCounts(documentStatusGroups),
       agents: normalizeStatusCounts(agentStatusGroups),
@@ -662,7 +717,7 @@ export async function getAnalyticsOverview() {
     hotKnowledge,
     knowledgeGaps,
     recentKnowledge,
-    categoryDistribution,
+    sourceDistribution,
     recentAgents,
   };
 }
