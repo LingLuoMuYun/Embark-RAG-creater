@@ -79,11 +79,13 @@ function getModelEnvLabel(llmInterface: LlmInterfaceKey): string {
 
 export async function createChatCompletion(
   messages: LlmMessage[],
-  llmInterface: LlmInterfaceKey = "default"
+  llmInterface: LlmInterfaceKey = "default",
+  options?: { signal?: AbortSignal }
 ): Promise<string> {
   const config = getLlmConfig(llmInterface);
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
+    signal: options?.signal,
     headers: {
       ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       "Content-Type": "application/json",
@@ -111,11 +113,13 @@ export async function createChatCompletion(
 export async function streamChatCompletion(
   messages: LlmMessage[],
   onToken: (token: string) => void,
-  llmInterface: LlmInterfaceKey = "default"
+  llmInterface: LlmInterfaceKey = "default",
+  options?: { signal?: AbortSignal }
 ): Promise<string> {
   const config = getLlmConfig(llmInterface);
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
+    signal: options?.signal,
     headers: {
       ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       "Content-Type": "application/json",

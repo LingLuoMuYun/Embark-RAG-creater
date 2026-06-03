@@ -1,7 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  Bot,
+  ChevronDown,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
+  Paperclip,
+  Plus,
+  Send,
+  Sparkles,
+  Square,
+  User,
+  X,
+} from "lucide-react";
 
 import { AdminShell } from "@/components/layout/admin-shell";
 import type {
@@ -17,12 +38,34 @@ type AgentItem = {
   status: string;
 };
 
+type ChatStreamStatus =
+  | "retrieving"
+  | "organizing"
+  | "reading-documents"
+  | "generating"
+  | "stopped"
+  | "failed";
+
+type RagSummary = {
+  status: "not-applicable" | "skipped" | "hit" | "miss";
+  citationCount: number;
+};
+
+type KnowledgeFile = {
+  id: string;
+  title: string;
+  chunkCount: number;
+};
+
 type UiMessage = Omit<ChatMessageDTO, "id" | "createdAt"> & {
   id: string;
   pending?: boolean;
+  streamStatus?: ChatStreamStatus;
+  ragSummary?: RagSummary;
+  knowledgeFiles?: KnowledgeFile[];
 };
 
-type ChatMode = "openai" | "agent" | "rag-openai" | "rag-agent";
+type ChatMode = "knowledge-agent" | "agent" | "openai";
 
 type AgentListResponse = {
   success: boolean;
@@ -39,26 +82,58 @@ type MessageListResponse = {
   data?: ChatMessageDTO[];
 };
 
-const CHAT_MODE_OPTIONS: Array<{ value: ChatMode; label: string }> = [
-  { value: "openai", label: "OpenAI" },
-  { value: "agent", label: "Agent" },
-  { value: "rag-openai", label: "RAG + OpenAI" },
-  { value: "rag-agent", label: "RAG + Agent" },
-];
+type ChatAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  fileType: string;
+  kind: string;
+  status: string;
+  textPreview: string;
+  error?: string | null;
+};
+
+type ChatAttachmentResponse = {
+  success: boolean;
+  data?: ChatAttachment;
+  error?: {
+    message?: string;
+  };
+};
+
+const CHAT_MODE_OPTIONS: Array<{ value: ChatMode; label: string; hint: string }> =
+  [
+    {
+      value: "knowledge-agent",
+      label: "Knowledge Agent",
+      hint: "知识库消费助手",
+    },
+    { value: "agent", label: "Agent", hint: "角色对话" },
+    { value: "openai", label: "OpenAI", hint: "直接问模型" },
+  ];
+
+const AGENT_MENU_ITEM_HEIGHT = 56;
+const AGENT_MENU_VISIBLE_COUNT = 4;
+const AGENT_MENU_MAX_HEIGHT =
+  AGENT_MENU_ITEM_HEIGHT * AGENT_MENU_VISIBLE_COUNT;
 
 export default function AgentChatPage() {
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [agentId, setAgentId] = useState("");
-  const [chatMode, setChatMode] = useState<ChatMode>("openai");
+  const [chatMode, setChatMode] = useState<ChatMode>("knowledge-agent");
   const [menuOpen, setMenuOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLElement>(null);
   const localMessageIdRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
+  const chatAbortRef = useRef<AbortController | null>(null);
 
   const currentAgent = useMemo(
     () => agents.find((agent) => agent.id === agentId),
@@ -74,7 +149,7 @@ export default function AgentChatPage() {
   const messageVirtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 120,
+    estimateSize: () => 128,
     overscan: 6,
     getItemKey: (index) => messages[index]?.id ?? index,
   });
@@ -84,7 +159,7 @@ export default function AgentChatPage() {
       "agentId"
     );
 
-    fetch("/api/agents?status=active")
+    fetch("/api/agents?status=active&pageSize=100")
       .then((res) => res.json())
       .then((json: AgentListResponse) => {
         if (!json.success || !json.data) {
@@ -92,13 +167,21 @@ export default function AgentChatPage() {
         }
 
         const items = json.data.items;
+        const hasInitialAgent =
+          initialAgentId &&
+          items.some((agent) => agent.id === initialAgentId);
+
+        if (hasInitialAgent) {
+          setChatMode("agent");
+        }
+
         setAgents(items);
         setAgentId((current) => {
           if (current) return current;
-          if (initialAgentId && items.some((agent) => agent.id === initialAgentId)) {
+          if (hasInitialAgent) {
             return initialAgentId;
           }
-          return items[0]?.id || "";
+          return "";
         });
       })
       .catch((err) => {
@@ -107,7 +190,7 @@ export default function AgentChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId || loading) return;
     fetch(`/api/conversations/${conversationId}/messages`)
       .then((res) => res.json())
       .then((json: MessageListResponse) => {
@@ -118,19 +201,29 @@ export default function AgentChatPage() {
               role: message.role,
               content: message.content,
               citations: message.citations,
+              knowledgeFiles: message.knowledgeFiles,
             }))
           );
         }
       })
       .catch(() => undefined);
-  }, [conversationId]);
+  }, [conversationId, loading]);
 
   useEffect(() => {
-    if (shouldAutoScrollRef.current && messages.length > 0) {
+    if (!shouldAutoScrollRef.current || messages.length === 0) return;
+
+    const frame = window.requestAnimationFrame(() => {
       messageVirtualizer.scrollToIndex(messages.length - 1, {
         align: "end",
       });
-    }
+
+      const container = scrollContainerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, [messages, messageVirtualizer]);
 
   function handleMessageScroll() {
@@ -142,12 +235,47 @@ export default function AgentChatPage() {
     shouldAutoScrollRef.current = distanceToBottom < 120;
   }
 
+  async function uploadAttachment(file: File) {
+    if (loading || uploadingAttachment) return;
+
+    setError(null);
+    setUploadingAttachment(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/chat/attachments", {
+        method: "POST",
+        body: formData,
+      });
+      const json = (await res.json().catch(() => null)) as
+        | ChatAttachmentResponse
+        | null;
+
+      if (!res.ok || !json?.success || !json.data) {
+        throw new Error(json?.error?.message || "附件上传失败");
+      }
+
+      setAttachments((prev) => [...prev, json.data!]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "附件上传失败");
+    } finally {
+      setUploadingAttachment(false);
+    }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((item) => item.id !== id));
+  }
+
   async function sendMessage() {
     const message = input.trim();
     if (!message || loading) return;
 
     setError(null);
     setLoading(true);
+    const abortController = new AbortController();
+    chatAbortRef.current = abortController;
     setInput("");
     shouldAutoScrollRef.current = true;
     localMessageIdRef.current += 1;
@@ -165,10 +293,11 @@ export default function AgentChatPage() {
       content: "",
       citations: [],
       pending: true,
+      streamStatus: "organizing",
     };
     setMessages((prev) => [...prev, userMessage, assistantMessage]);
 
-    const requiresAgent = chatMode === "agent" || chatMode === "rag-agent";
+    const requiresAgent = chatMode === "agent";
     if (requiresAgent && !agentId) {
       setMessages((prev) =>
         prev.map((item) =>
@@ -181,15 +310,21 @@ export default function AgentChatPage() {
             : item
         )
       );
+      if (chatAbortRef.current === abortController) {
+        chatAbortRef.current = null;
+      }
       setLoading(false);
       return;
     }
 
     try {
-      const endpoint =
-        chatMode === "rag-agent" ? `/api/agents/${agentId}/chat` : "/api/chat";
+      const endpoint = "/api/chat";
+      const attachmentIds = attachments
+        .filter((attachment) => attachment.status === "ready")
+        .map((attachment) => attachment.id);
       const res = await fetch(endpoint, {
         method: "POST",
+        signal: abortController.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
@@ -197,6 +332,7 @@ export default function AgentChatPage() {
           ...(agentId ? { agentId } : {}),
           chatMode,
           llmInterface: "openai",
+          attachmentIds,
         }),
       });
 
@@ -225,6 +361,33 @@ export default function AgentChatPage() {
             )
           );
         },
+        status: (status) => {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantMessage.id
+                ? { ...item, streamStatus: status.status }
+                : item
+            )
+          );
+        },
+        ragSummary: (ragSummary) => {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantMessage.id
+                ? { ...item, ragSummary }
+                : item
+            )
+          );
+        },
+        knowledgeFiles: (knowledgeFiles) => {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantMessage.id
+                ? { ...item, knowledgeFiles }
+                : item
+            )
+          );
+        },
         error: (data) => {
           throw new Error(data.message || "回答生成失败");
         },
@@ -235,7 +398,27 @@ export default function AgentChatPage() {
           item.id === assistantMessage.id ? { ...item, pending: false } : item
         )
       );
+      setAttachments([]);
     } catch (err) {
+      if (
+        abortController.signal.aborted ||
+        (err instanceof Error && err.name === "AbortError")
+      ) {
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === assistantMessage.id
+              ? {
+                  ...item,
+                  content: item.content || "已停止生成。",
+                  pending: false,
+                  streamStatus: "stopped",
+                }
+              : item
+          )
+        );
+        return;
+      }
+
       const messageText = err instanceof Error ? err.message : "回答生成失败";
       setError(messageText);
       setMessages((prev) =>
@@ -245,16 +428,27 @@ export default function AgentChatPage() {
                 ...item,
                 content: `生成失败：${messageText}`,
                 pending: false,
+                streamStatus: "failed",
               }
             : item
         )
       );
     } finally {
+      if (chatAbortRef.current === abortController) {
+        chatAbortRef.current = null;
+      }
       setLoading(false);
     }
   }
 
+  function stopMessage() {
+    chatAbortRef.current?.abort();
+  }
+
   function startNewConversation() {
+    chatAbortRef.current?.abort();
+    chatAbortRef.current = null;
+    setLoading(false);
     setConversationId(undefined);
     setMessages([]);
     setError(null);
@@ -263,179 +457,659 @@ export default function AgentChatPage() {
 
   return (
     <AdminShell>
-      <div className="flex min-h-[calc(100vh-7rem)] bg-zinc-50 text-zinc-900">
+      <div className="flex h-[calc(100dvh-6.5rem)] min-h-[520px] overflow-hidden bg-[#f7faf8] text-slate-950">
+      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.13),transparent_55%)]" />
 
-
-        <main className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-zinc-200 bg-white px-4 py-3 md:px-6">
-          <div className="mx-auto flex max-w-4xl items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-zinc-500">当前 Agent</p>
-              <h2 className="truncate text-xl font-semibold">
-                {currentAgent?.name || "请选择一个启用的 Agent"}
-              </h2>
-            </div>
-            <button
-              type="button"
-              onClick={startNewConversation}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 md:hidden"
-            >
-              新会话
-            </button>
-          </div>
-        </header>
-
-        <section
-          ref={scrollContainerRef}
-          onScroll={handleMessageScroll}
-          className="flex-1 overflow-y-auto px-4 py-6 md:px-8"
-        >
-          <div className="mx-auto max-w-3xl">
-            {messages.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-10 text-center text-sm leading-6 text-zinc-500">
-                输入问题后，系统会组装多轮记忆与 RAG 检索上下文，再生成带引用的回答。
-              </div>
-            ) : (
-              <div
-                className="relative w-full"
-                style={{
-                  height: `${messageVirtualizer.getTotalSize()}px`,
-                }}
-              >
-                {messageVirtualizer.getVirtualItems().map((virtualItem) => {
-                  const message = messages[virtualItem.index];
-                  if (!message) return null;
-
-                  return (
-                    <div
-                      key={virtualItem.key}
-                      ref={messageVirtualizer.measureElement}
-                      data-index={virtualItem.index}
-                      className="absolute left-0 top-0 w-full py-2"
-                      style={{
-                        transform: `translateY(${virtualItem.start}px)`,
-                      }}
-                    >
-                      <MessageBubble message={message} />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </section>
-
-        <footer className="border-t border-zinc-200 bg-white px-4 py-4 md:px-8">
-          <div className="mx-auto max-w-3xl">
-            {error && (
-              <p className="mb-2 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {error}
-              </p>
-            )}
-            <div className="flex gap-2">
-              <div className="relative shrink-0">
-                <button
-                  type="button"
-                  aria-expanded={menuOpen}
-                  onClick={() => setMenuOpen((open) => !open)}
-                  disabled={loading}
-                  className="flex h-12 w-36 flex-col justify-center rounded-md border border-zinc-200 bg-white px-3 text-left outline-none hover:bg-zinc-50 focus:border-cyan-500 disabled:cursor-not-allowed disabled:bg-zinc-100"
-                >
-                  <span className="truncate text-xs font-medium text-zinc-800">
+        {messages.length > 0 && (
+          <header className="relative shrink-0 border-b border-slate-200/80 bg-white/85 px-4 py-3 shadow-sm backdrop-blur md:px-8">
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-md bg-emerald-700 text-white shadow-sm">
+                  <Sparkles aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">
+                    Embark 知识助手
+                  </p>
+                  <p className="truncate text-xs text-slate-500">
                     {currentChatMode.label}
-                  </span>
-                  <span className="truncate text-[11px] text-zinc-400">
-                    {currentAgent?.name || "无 Agent"}
-                  </span>
-                </button>
-                {menuOpen && (
-                  <div className="absolute bottom-14 left-0 z-20 w-64 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg">
-                    <div className="p-2">
-                      {CHAT_MODE_OPTIONS.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => {
-                            setChatMode(option.value);
-                            setMenuOpen(false);
-                          }}
-                          className={`w-full rounded-md px-2 py-2 text-left text-xs ${
-                            option.value === chatMode
-                              ? "bg-cyan-50 text-cyan-800"
-                              : "text-zinc-700 hover:bg-zinc-50"
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                    {currentAgent ? ` · ${currentAgent.name}` : ""}
+                  </p>
+                </div>
               </div>
-              <textarea
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    sendMessage();
-                  }
-                }}
-                placeholder="输入问题，Enter 发送，Shift + Enter 换行"
-                className="min-h-12 flex-1 resize-none rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-cyan-500"
-              />
               <button
                 type="button"
-                onClick={sendMessage}
-                disabled={!input.trim() || loading}
-                className="rounded-md bg-cyan-700 px-5 py-2 text-sm font-medium text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                onClick={startNewConversation}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
               >
-                {loading ? "生成中" : "发送"}
+                <Plus aria-hidden="true" />
+                新对话
               </button>
             </div>
-          </div>
-        </footer>
-        </main>
+          </header>
+        )}
+
+        {messages.length === 0 ? (
+          <section className="relative flex min-h-0 flex-1 items-center justify-center px-4 py-10 md:px-8">
+            <div className="flex w-full max-w-4xl flex-col items-center gap-9">
+              <div className="flex flex-col items-center gap-3 text-center">
+                <div className="flex size-12 items-center justify-center rounded-md bg-emerald-700 text-white shadow-lg shadow-emerald-900/15">
+                  <Sparkles aria-hidden="true" />
+                </div>
+                <h1 className="text-3xl font-semibold tracking-normal text-slate-950 md:text-4xl">
+                  Hi，我是 Embark，让你的知识触手可及
+                </h1>
+              </div>
+
+              <ChatComposer
+                value={input}
+                attachments={attachments}
+                loading={loading}
+                uploadingAttachment={uploadingAttachment}
+                error={error}
+                menuOpen={menuOpen}
+                currentChatMode={currentChatMode}
+                chatMode={chatMode}
+                agents={agents}
+                agentId={agentId}
+                onValueChange={setInput}
+                onSubmit={sendMessage}
+                onStop={stopMessage}
+                onUploadAttachment={uploadAttachment}
+                onRemoveAttachment={removeAttachment}
+                onMenuOpenChange={setMenuOpen}
+                onModeChange={setChatMode}
+                onAgentChange={setAgentId}
+              />
+            </div>
+          </section>
+        ) : (
+          <>
+            <section
+              ref={scrollContainerRef}
+              onScroll={handleMessageScroll}
+              className="relative min-h-0 flex-1 overflow-y-auto px-4 py-7 md:px-8"
+            >
+              <div className="mx-auto max-w-5xl">
+                <div
+                  className="relative w-full"
+                  style={{
+                    height: `${messageVirtualizer.getTotalSize()}px`,
+                  }}
+                >
+                  {messageVirtualizer.getVirtualItems().map((virtualItem) => {
+                    const message = messages[virtualItem.index];
+                    if (!message) return null;
+
+                    return (
+                      <div
+                        key={virtualItem.key}
+                        ref={messageVirtualizer.measureElement}
+                        data-index={virtualItem.index}
+                        className="absolute left-0 top-0 w-full py-2"
+                        style={{
+                          transform: `translateY(${virtualItem.start}px)`,
+                        }}
+                      >
+                        <MessageBubble message={message} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+
+            <footer className="relative shrink-0 px-4 pb-1 md:px-8">
+              <div className="mx-auto max-w-5xl">
+                <ChatComposer
+                  compact
+                  value={input}
+                  attachments={attachments}
+                  loading={loading}
+                  uploadingAttachment={uploadingAttachment}
+                  error={error}
+                  menuOpen={menuOpen}
+                  currentChatMode={currentChatMode}
+                  chatMode={chatMode}
+                  agents={agents}
+                  agentId={agentId}
+                  onValueChange={setInput}
+                  onSubmit={sendMessage}
+                  onStop={stopMessage}
+                  onUploadAttachment={uploadAttachment}
+                  onRemoveAttachment={removeAttachment}
+                  onMenuOpenChange={setMenuOpen}
+                  onModeChange={setChatMode}
+                  onAgentChange={setAgentId}
+                />
+              </div>
+            </footer>
+          </>
+        )}
+      </main>
       </div>
     </AdminShell>
   );
 }
 
-function MessageBubble({ message }: { message: UiMessage }) {
-  const isUser = message.role === "user";
+function ChatComposer({
+  value,
+  attachments,
+  loading,
+  uploadingAttachment,
+  error,
+  menuOpen,
+  currentChatMode,
+  chatMode,
+  agents,
+  agentId,
+  compact = false,
+  onValueChange,
+  onSubmit,
+  onStop,
+  onUploadAttachment,
+  onRemoveAttachment,
+  onMenuOpenChange,
+  onModeChange,
+  onAgentChange,
+}: {
+  value: string;
+  attachments: ChatAttachment[];
+  loading: boolean;
+  uploadingAttachment: boolean;
+  error: string | null;
+  menuOpen: boolean;
+  currentChatMode: { value: ChatMode; label: string; hint: string };
+  chatMode: ChatMode;
+  agents: AgentItem[];
+  agentId: string;
+  compact?: boolean;
+  onValueChange: (value: string) => void;
+  onSubmit: () => void;
+  onStop: () => void;
+  onUploadAttachment: (file: File) => void;
+  onRemoveAttachment: (id: string) => void;
+  onMenuOpenChange: (open: boolean) => void;
+  onModeChange: (mode: ChatMode) => void;
+  onAgentChange: (id: string) => void;
+}) {
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const agentMenuScrollRef = useRef<HTMLDivElement>(null);
+  const currentAgent = agents.find((agent) => agent.id === agentId);
+  const modeButtonLabel =
+    chatMode === "agent" && currentAgent ? currentAgent.name : currentChatMode.label;
+  const agentMenuItems = useMemo(
+    () => [
+      {
+        key: "mode:knowledge-agent",
+        type: "mode" as const,
+        mode: "knowledge-agent" as const,
+        label: "Knowledge Agent",
+        hint: CHAT_MODE_OPTIONS[0].hint,
+      },
+      {
+        key: "mode:openai",
+        type: "mode" as const,
+        mode: "openai" as const,
+        label: "OpenAI",
+        hint: CHAT_MODE_OPTIONS[2].hint,
+      },
+      ...agents.map((agent) => ({
+        key: `agent:${agent.id}`,
+        type: "agent" as const,
+        agentId: agent.id,
+        label: agent.name,
+        hint: agent.description || "角色对话",
+      })),
+    ],
+    [agents]
+  );
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual keeps long Agent menus lightweight.
+  const agentMenuVirtualizer = useVirtualizer({
+    count: agentMenuItems.length,
+    getScrollElement: () => agentMenuScrollRef.current,
+    estimateSize: () => AGENT_MENU_ITEM_HEIGHT,
+    overscan: 6,
+    getItemKey: (index) => agentMenuItems[index]?.key ?? index,
+  });
+  const agentMenuHeight = Math.min(
+    agentMenuItems.length * AGENT_MENU_ITEM_HEIGHT,
+    AGENT_MENU_MAX_HEIGHT
+  );
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) onUploadAttachment(file);
+  }
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className="flex w-full flex-col gap-3">
+      {error && (
+        <p className="rounded-md border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error}
+        </p>
+      )}
+
       <div
-        className={`max-w-[85%] rounded-lg px-4 py-3 text-sm leading-6 ${
-          isUser ? "bg-cyan-700 text-white" : "border border-zinc-200 bg-white"
+        className={`rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-900/10 ${
+          compact ? "p-3" : "p-4"
         }`}
       >
-        <div className="whitespace-pre-wrap break-words">
-          {message.content || (message.pending ? "正在生成..." : "")}
-        </div>
-        {!isUser && message.citations.length > 0 && (
-          <div className="mt-3 space-y-2 border-t border-zinc-100 pt-3">
-            <p className="text-xs font-medium text-zinc-500">引用来源</p>
-            {message.citations.map((citation) => (
-              <div
-                key={`${citation.refId}-${citation.chunkId}`}
-                className="rounded-md bg-zinc-50 p-3 text-xs text-zinc-600"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-zinc-800">
-                    [{citation.refId}] {citation.title}
-                  </span>
-                  <span>{citation.score.toFixed(2)}</span>
-                </div>
-                <p className="mt-1 line-clamp-3">{citation.content}</p>
-              </div>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/bmp"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt,.md,.csv,.xlsx,.docx,.pdf"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {(attachments.length > 0 || uploadingAttachment) && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+              <AttachmentChip
+                key={attachment.id}
+                attachment={attachment}
+                onRemove={() => onRemoveAttachment(attachment.id)}
+              />
             ))}
+            {uploadingAttachment && (
+              <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <Loader2 className="animate-spin" aria-hidden="true" />
+                <span>附件解析中...</span>
+              </div>
+            )}
           </div>
         )}
+
+        <textarea
+          value={value}
+          onChange={(event) => onValueChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              onSubmit();
+            }
+          }}
+          placeholder="直接向模型提问"
+          className={`w-full resize-none border-0 bg-transparent text-base leading-7 text-slate-900 outline-none placeholder:text-slate-400 ${
+            compact ? "min-h-16" : "min-h-28"
+          }`}
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                type="button"
+                aria-expanded={menuOpen}
+                onClick={() => onMenuOpenChange(!menuOpen)}
+                disabled={loading}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                <span className="max-w-36 truncate">{modeButtonLabel}</span>
+                <ChevronDown aria-hidden="true" />
+              </button>
+              {menuOpen && (
+                <div className="absolute bottom-11 left-0 z-20 w-64 overflow-hidden rounded-lg border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10">
+                  <div
+                    ref={agentMenuScrollRef}
+                    className="min-h-0 overflow-y-scroll"
+                    style={{ height: agentMenuHeight }}
+                  >
+                    <div
+                      className="relative w-full"
+                      style={{
+                        height: `${agentMenuVirtualizer.getTotalSize()}px`,
+                      }}
+                    >
+                      {agentMenuVirtualizer
+                        .getVirtualItems()
+                        .map((virtualItem) => {
+                          const item = agentMenuItems[virtualItem.index];
+                          if (!item) return null;
+
+                          const active =
+                            item.type === "agent"
+                              ? chatMode === "agent" && item.agentId === agentId
+                              : chatMode === item.mode;
+
+                          return (
+                            <div
+                              key={virtualItem.key}
+                              className="absolute left-0 top-0 flex w-full items-center"
+                              style={{
+                                height: `${virtualItem.size}px`,
+                                transform: `translateY(${virtualItem.start}px)`,
+                              }}
+                            >
+                              <ModeMenuButton
+                                active={active}
+                                label={item.label}
+                                hint={item.hint}
+                                onClick={() => {
+                                  if (item.type === "agent") {
+                                    onModeChange("agent");
+                                    onAgentChange(item.agentId);
+                                  } else {
+                                    onModeChange(item.mode);
+                                    onAgentChange("");
+                                  }
+                                  onMenuOpenChange(false);
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <IconToolButton
+              label="上传图片"
+              disabled={loading || uploadingAttachment}
+              onClick={() => imageInputRef.current?.click()}
+            >
+              <ImageIcon aria-hidden="true" />
+            </IconToolButton>
+            <IconToolButton
+              label="上传文件"
+              disabled={loading || uploadingAttachment}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip aria-hidden="true" />
+            </IconToolButton>
+          </div>
+
+          <div className="flex min-w-0 items-center gap-2">
+            {loading ? (
+              <button
+                type="button"
+                onClick={onStop}
+                disabled={uploadingAttachment}
+                aria-label="停止生成"
+                className="inline-flex size-9 items-center justify-center rounded-md bg-slate-900 text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
+              >
+                <Square aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={!value.trim() || uploadingAttachment}
+                aria-label="发送"
+                className="inline-flex size-9 items-center justify-center rounded-md bg-emerald-700 text-white shadow-sm shadow-emerald-900/15 hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-50 disabled:text-emerald-200"
+              >
+                <Send aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
+}
+
+function ModeMenuButton({
+  active,
+  label,
+  hint,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-md px-2 py-1.5 text-left text-xs ${
+        active
+          ? "bg-emerald-50 text-emerald-800"
+          : "text-slate-700 hover:bg-slate-50"
+      }`}
+    >
+      <span className="block truncate font-medium leading-5">{label}</span>
+      <span className="block truncate text-[11px] leading-4 text-slate-500">
+        {hint}
+      </span>
+    </button>
+  );
+}
+
+function IconToolButton({
+  label,
+  children,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  children: ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex size-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+    >
+      {children}
+    </button>
+  );
+}
+
+function AttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: ChatAttachment;
+  onRemove: () => void;
+}) {
+  const Icon = attachment.kind === "image" ? ImageIcon : FileText;
+  const statusText =
+    attachment.status === "ready"
+      ? "已解析"
+      : attachment.status === "failed"
+        ? "解析失败"
+        : "解析中";
+
+  return (
+    <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+      <Icon aria-hidden="true" />
+      <div className="min-w-0">
+        <div className="max-w-44 truncate font-medium">
+          {attachment.fileName}
+        </div>
+        <div className="max-w-44 truncate text-slate-500">
+          {statusText}
+          {attachment.textPreview ? ` · ${attachment.textPreview}` : ""}
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-label="移除附件"
+        onClick={onRemove}
+        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+      >
+        <X aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+function MessageBubble({ message }: { message: UiMessage }) {
+  const isUser = message.role === "user";
+  const pendingText = getStreamStatusLabel(message.streamStatus);
+
+  return (
+    <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+      {!isUser && (
+        <div className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-md bg-white text-emerald-700 shadow-sm ring-1 ring-slate-200">
+          <Bot aria-hidden="true" />
+        </div>
+      )}
+      <div
+        className={`max-w-[min(760px,82%)] rounded-lg px-4 py-3 text-sm leading-7 shadow-sm ${
+          isUser
+            ? "bg-emerald-700 text-white shadow-emerald-900/15"
+            : "border border-slate-200 bg-white text-slate-800"
+        }`}
+      >
+        <div className="whitespace-pre-wrap break-words">
+          {message.content || (message.pending ? pendingText : "")}
+        </div>
+        {!isUser && message.knowledgeFiles && message.knowledgeFiles.length > 0 && (
+          <KnowledgeFilesNotice files={message.knowledgeFiles} />
+        )}
+        {!isUser && <RagHitNotice summary={message.ragSummary} />}
+        {!isUser && message.citations.length > 0 && (
+          <CitationSources citations={message.citations} />
+        )}
+      </div>
+      {isUser && (
+        <div className="mt-1 flex size-9 shrink-0 items-center justify-center rounded-md bg-emerald-700 text-white shadow-sm">
+          <User aria-hidden="true" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getStreamStatusLabel(status?: ChatStreamStatus) {
+  if (status === "retrieving") return "正在检索知识库...";
+  if (status === "organizing") return "正在组织回答...";
+  if (status === "reading-documents") return "正在读取导入文档...";
+  if (status === "generating") return "正在生成...";
+  if (status === "stopped") return "已停止生成";
+  if (status === "failed") return "生成失败";
+  return "正在生成...";
+}
+
+function KnowledgeFilesNotice({ files }: { files: KnowledgeFile[] }) {
+  return (
+    <div className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+      <div className="mb-1 flex items-center gap-2 font-medium">
+        <FileText aria-hidden="true" />
+        <span>已读取导入文档 {files.length} 个</span>
+      </div>
+      <div className="flex flex-col gap-1 text-emerald-700">
+        {files.map((file) => (
+          <span key={file.id} className="truncate">
+            {file.title} · {file.chunkCount} 段
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RagHitNotice({ summary }: { summary?: RagSummary }) {
+  if (!summary || summary.status === "not-applicable" || summary.status === "skipped") {
+    return null;
+  }
+
+  const isHit = summary.status === "hit";
+
+  return (
+    <div
+      className={`mt-3 rounded-md border px-3 py-2 text-xs ${
+        isHit
+          ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+          : "border-amber-100 bg-amber-50 text-amber-800"
+      }`}
+    >
+      {isHit
+        ? `已基于 ${summary.citationCount} 条知识来源回答`
+        : "未检索到相关知识，以下为模型直接回答"}
+    </div>
+  );
+}
+
+function CitationSources({ citations }: { citations: ChatCitation[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleCitations = expanded ? citations : citations.slice(0, 3);
+  const hiddenCount = Math.max(citations.length - visibleCitations.length, 0);
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-medium text-emerald-700">
+          引用来源 {citations.length} 条
+        </p>
+        {citations.length > 3 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+          >
+            {expanded ? "收起" : `展开 ${hiddenCount} 条`}
+            <ChevronDown
+              aria-hidden="true"
+              className={expanded ? "rotate-180 transition-transform" : "transition-transform"}
+            />
+          </button>
+        )}
+      </div>
+
+      {visibleCitations.map((citation) => (
+        <div
+          key={`${citation.refId}-${citation.chunkId}`}
+          className="rounded-md bg-emerald-50/70 p-3 text-xs text-slate-600"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate font-medium text-slate-900">
+              [{citation.refId}] {citation.title}
+            </span>
+            <span className="shrink-0 text-slate-500">
+              {citation.score.toFixed(2)}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2">
+            {summarizeCitationContent(citation.content)}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function summarizeCitationContent(content: string) {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (!normalized) return "暂无摘要";
+
+  if (normalized.startsWith("{") || normalized.startsWith("[")) {
+    const values = Array.from(
+      normalized.matchAll(
+        /"(?:value|name|displayName|title|dataField)"\s*:\s*"([^"]{1,80})"/g
+      )
+    )
+      .map((match) => match[1])
+      .filter((value, index, array) => value && array.indexOf(value) === index)
+      .slice(0, 4);
+
+    return values.length > 0
+      ? `结构化数据片段：${values.join("、")}`
+      : "结构化数据片段，已隐藏原始 JSON 内容";
+  }
+
+  return normalized.length > 180 ? `${normalized.slice(0, 180)}...` : normalized;
 }
 
 async function readSseStream(
@@ -444,6 +1118,9 @@ async function readSseStream(
     meta: (data: { conversationId?: string }) => void;
     token: (token: string) => void;
     citations: (citations: ChatCitation[]) => void;
+    status: (data: { status: ChatStreamStatus }) => void;
+    ragSummary: (data: RagSummary) => void;
+    knowledgeFiles: (data: KnowledgeFile[]) => void;
     error: (data: { message?: string }) => void;
   }
 ) {
@@ -476,6 +1153,9 @@ async function readSseStream(
       if (event === "meta") handlers.meta(data);
       if (event === "token") handlers.token(data);
       if (event === "citations") handlers.citations(data);
+      if (event === "status") handlers.status(data);
+      if (event === "rag-summary") handlers.ragSummary(data);
+      if (event === "knowledge-files") handlers.knowledgeFiles(data);
       if (event === "error") handlers.error(data);
     }
   }

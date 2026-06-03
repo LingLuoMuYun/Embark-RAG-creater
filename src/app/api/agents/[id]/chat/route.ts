@@ -43,9 +43,14 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: unknown) => {
-        controller.enqueue(
-          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-        );
+        if (request.signal.aborted) return;
+        try {
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+          );
+        } catch {
+          // The client may have stopped the stream between tokens.
+        }
       };
 
       try {
@@ -68,18 +73,30 @@ export async function POST(
           messages: prepared.messages,
           citations: prepared.citations,
           llmInterface: parsed.data.llmInterface,
+          signal: request.signal,
           onToken: (token) => send("token", token),
         });
 
         send("done", { ok: true });
       } catch (error) {
+        if (request.signal.aborted || (error as Error).name === "AbortError") {
+          return;
+        }
+
         send("error", {
           code: "CHAT_ERROR",
           message: error instanceof Error ? error.message : "Agent chat failed",
         });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Client may have already closed the stream.
+        }
       }
+    },
+    cancel() {
+      // The client controls cancellation through request.signal.
     },
   });
 

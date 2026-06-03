@@ -18,11 +18,18 @@ export type ChatCitation = {
   score: number;
 };
 
+export type ChatKnowledgeFile = {
+  id: string;
+  title: string;
+  chunkCount: number;
+};
+
 export type ChatMessageDTO = {
   id: string;
   role: Exclude<ChatRole, "system">;
   content: string;
   citations: ChatCitation[];
+  knowledgeFiles?: ChatKnowledgeFile[];
   createdAt: string;
 };
 

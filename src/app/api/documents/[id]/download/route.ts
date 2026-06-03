@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 
 import { getDocumentById } from "@/server/services/document.service";
-import { documentIdSchema } from "@/features/document/document.validation";
+import { documentIdSchema } from "@/features/document/components/document.validation";
 
 const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 

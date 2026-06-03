@@ -18,6 +18,10 @@ import type {
   ChatMessageDTO,
 } from "@/features/agent/agent-chat.types";
 import type { RagRetrieveResponse } from "@/features/rag/types";
+import {
+  RAG_CITATION_MIN_SCORE,
+  shouldUseRagForMessage,
+} from "@/server/services/rag/gating";
 import { retrieveRagContexts } from "@/server/services/rag/retriever";
 
 import {
@@ -110,18 +114,28 @@ export async function prepareAgentChat(input: {
     llmInterface: input.llmInterface ?? "default",
   });
   const recentMessages = existingMessages.slice(-RECENT_MESSAGE_LIMIT);
-  const retrieve = await retrieveKnowledgeContext(agent, input.message);
+  const shouldUseKnowledge = shouldUseRagForMessage(input.message);
+  const retrieve = shouldUseKnowledge
+    ? await retrieveKnowledgeContext(agent, input.message)
+    : createEmptyRetrieveResponse(input.message);
 
   return {
     agent,
     conversation: compactedConversation,
-    messages: buildPromptMessages({
-      agent,
-      memorySummary: compactedConversation.memorySummary,
-      recentMessages,
-      retrieve,
-      userMessage: input.message,
-    }),
+    messages: shouldUseKnowledge
+      ? buildPromptMessages({
+          agent,
+          memorySummary: compactedConversation.memorySummary,
+          recentMessages,
+          retrieve,
+          userMessage: input.message,
+        })
+      : buildDirectAgentMessages({
+          agent,
+          memorySummary: compactedConversation.memorySummary,
+          recentMessages,
+          userMessage: input.message,
+        }),
     citations: toCitations(retrieve),
   };
 }
@@ -132,12 +146,14 @@ export async function streamAndPersistAgentAnswer(input: {
   messages: LlmMessage[];
   citations: ChatCitation[];
   llmInterface?: LlmInterfaceKey;
+  signal?: AbortSignal;
   onToken: (token: string) => void;
 }): Promise<string> {
   const answer = await streamChatCompletion(
     input.messages,
     input.onToken,
-    input.llmInterface ?? "default"
+    input.llmInterface ?? "default",
+    { signal: input.signal }
   );
 
   await prisma.$transaction(async (tx) => {
@@ -358,6 +374,51 @@ ${input.retrieve.llmContext || "未检索到相关知识。"}
   ];
 }
 
+function buildDirectAgentMessages(input: {
+  agent: ExpertAgent;
+  memorySummary: string | null;
+  recentMessages: AgentMessage[];
+  userMessage: string;
+}): LlmMessage[] {
+  const recentText = input.recentMessages
+    .map((message) => `${message.role}: ${message.content}`)
+    .join("\n\n");
+
+  return [
+    {
+      role: "system",
+      content: `你是一个知识库 Agent。
+
+Agent 角色设定：
+${input.agent.systemPrompt || "根据用户问题提供准确、友好的回答。"}
+
+回答风格：
+${input.agent.answerStyle}
+
+历史对话摘要：
+${input.memorySummary || "暂无"}
+
+最近对话：
+${recentText || "暂无"}
+
+当前问题不需要检索知识库。请自然回答，不要添加知识库引用编号。`,
+    },
+    {
+      role: "user",
+      content: input.userMessage,
+    },
+  ];
+}
+
+function createEmptyRetrieveResponse(query: string): RagRetrieveResponse {
+  return {
+    query,
+    contexts: [],
+    llmContext: "",
+    references: [],
+  };
+}
+
 function createConversationTitle(message: string): string {
   const normalized = message.replace(/\s+/g, " ").trim();
   return normalized.length > 40 ? `${normalized.slice(0, 40)}...` : normalized;
@@ -439,7 +500,9 @@ function parseCitations(value: string | null): ChatCitation[] {
 }
 
 function toCitations(retrieve: RagRetrieveResponse): ChatCitation[] {
-  return retrieve.contexts.map((context, index) => {
+  return retrieve.contexts
+    .filter((context) => context.score >= RAG_CITATION_MIN_SCORE)
+    .map((context, index) => {
     const reference = retrieve.references.find(
       (item) => item.chunkId === context.chunkId
     );

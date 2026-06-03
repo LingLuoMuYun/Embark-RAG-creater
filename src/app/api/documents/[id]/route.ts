@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getDocumentById, deleteDocument, updateDocumentContent } from "@/server/services/document.service";
-import { documentIdSchema, updateDocumentSchema } from "@/features/document/document.validation";
+import { documentIdSchema, updateDocumentSchema } from "@/features/document/components/document.validation";
 
 export async function GET(
   _request: NextRequest,

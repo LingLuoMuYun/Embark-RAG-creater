@@ -5,7 +5,7 @@ export const llmInterfaceSchema = z
   .default("default");
 
 export const chatModeSchema = z
-  .enum(["openai", "agent", "rag-openai", "rag-agent"])
+  .enum(["openai", "agent", "knowledge-agent", "rag-openai"])
   .default("openai");
 
 export const agentChatRequestSchema = z.object({
@@ -17,8 +17,11 @@ export const agentChatRequestSchema = z.object({
 
 export const directChatRequestSchema = z.object({
   message: z.string().trim().min(1, "问题不能为空").max(8000),
+  conversationId: z.string().trim().min(1).optional(),
   agentId: z.string().trim().min(1).optional(),
   chatMode: chatModeSchema,
+  llmInterface: llmInterfaceSchema.optional(),
+  attachmentIds: z.array(z.string().trim().min(1)).max(10).optional(),
 });
 
 export const agentConversationListQuerySchema = z.object({

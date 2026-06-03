@@ -255,6 +255,61 @@ model AgentMessage {
   @@index([createdAt])
 }
 
+model ChatAttachment {
+  id       String @id @default(cuid())
+  fileName String
+  mimeType String
+  fileSize Int
+  fileType String
+  kind     String
+  filePath String
+
+  parsedText String?
+  status     String  @default("parsing")
+  error      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ChatConversation {
+  id      String  @id @default(cuid())
+  title   String
+  mode    String
+  agentId String?
+  status  String  @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+
+  @@index([mode])
+  @@index([agentId])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model ChatMessage {
+  id                 String  @id @default(cuid())
+  conversationId     String
+  role               String
+  content            String
+  citationsJson      String?
+  knowledgeFilesJson String?
+
+  createdAt DateTime @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
 model UsageLog {
   id String @id @default(cuid())
 

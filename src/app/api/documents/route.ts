@@ -7,7 +7,7 @@ import {
   updateDocumentStatus,
   getFileTypeFromName,
 } from "@/server/services/document.service";
-import { documentListQuerySchema, uploadFileSchema } from "@/features/document/document.validation";
+import { documentListQuerySchema, uploadFileSchema } from "@/features/document/components/document.validation";
 
 export async function GET(request: NextRequest) {
   try {

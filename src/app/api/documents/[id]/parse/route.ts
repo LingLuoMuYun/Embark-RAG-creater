@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { parseDocument } from "@/server/services/document.service";
-import { documentIdSchema } from "@/features/document/document.validation";
+import { documentIdSchema } from "@/features/document/components/document.validation";
 
 export async function POST(
   _request: NextRequest,

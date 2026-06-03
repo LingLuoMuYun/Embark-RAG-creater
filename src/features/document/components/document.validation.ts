@@ -21,6 +21,24 @@ export const uploadFileSchema = z.object({
   }),
 });
 
+export const resumableUploadQuerySchema = z.object({
+  fingerprint: z.string().min(8),
+  fileName: z.string().min(1),
+  fileSize: z.coerce.number().int().positive().max(100 * 1024 * 1024, "文件不能超过100MB"),
+  fileType: z.enum(ALLOWED_TYPES),
+  chunkSize: z.coerce.number().int().positive().max(10 * 1024 * 1024),
+  totalChunks: z.coerce.number().int().min(1).max(10000),
+});
+
+export const resumableUploadChunkSchema = z.object({
+  uploadId: z.string().regex(/^[a-f0-9]{64}$/),
+  chunkIndex: z.coerce.number().int().min(0),
+});
+
+export const resumableUploadCompleteSchema = z.object({
+  uploadId: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
 export const updateDocumentSchema = z.object({
   content: z.string().min(1, "内容不能为空"),
 });
