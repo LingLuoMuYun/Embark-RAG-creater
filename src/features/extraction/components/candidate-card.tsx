@@ -12,6 +12,7 @@ interface Candidate {
 interface Props {
   candidate: Candidate;
   selected: boolean;
+  highlighted?: boolean;
   onToggle: (id: string) => void;
   onEdit: (candidate: Candidate) => void;
   onReject: (id: string) => void;
@@ -37,6 +38,7 @@ const typeColors: Record<string, string> = {
 export default function CandidateCard({
   candidate,
   selected,
+  highlighted = false,
   onToggle,
   onEdit,
   onReject,
@@ -44,9 +46,12 @@ export default function CandidateCard({
 }: Props) {
   return (
     <div
+      id={`candidate-${candidate.id}`}
       className={`border rounded-lg p-4 transition-all ${
         selected
           ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+          : highlighted
+            ? "border-amber-300 bg-amber-50 ring-2 ring-amber-200"
           : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
       }`}
     >

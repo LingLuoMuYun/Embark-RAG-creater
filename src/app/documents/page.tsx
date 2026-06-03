@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AdminShell } from "@/components/layout/admin-shell";
@@ -18,6 +18,21 @@ export default function DocumentsPage() {
 
   const handleUploaded = useCallback(() => {
     setRefreshKey((k) => k + 1);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncPreviewId = () => {
+      const params = new URLSearchParams(window.location.search);
+      setPreviewId(params.get("preview"));
+    };
+
+    syncPreviewId();
+    window.addEventListener("popstate", syncPreviewId);
+    return () => window.removeEventListener("popstate", syncPreviewId);
   }, []);
 
   const handleParse = useCallback(async (ids: string[]) => {
@@ -38,8 +53,19 @@ export default function DocumentsPage() {
   }, []);
 
   const handlePreview = useCallback((id: string) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("preview", id);
+    router.push(`/documents?${params.toString()}`);
     setPreviewId(id);
-  }, []);
+  }, [router]);
+
+  const handleClosePreview = useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("preview");
+    const query = params.toString();
+    router.replace(query ? `/documents?${query}` : "/documents");
+    setPreviewId(null);
+  }, [router]);
 
   return (
     <AdminShell>
@@ -88,7 +114,7 @@ export default function DocumentsPage() {
 
         <DocumentPreview
           documentId={previewId}
-          onClose={() => setPreviewId(null)}
+          onClose={handleClosePreview}
         />
       </div>
     </AdminShell>

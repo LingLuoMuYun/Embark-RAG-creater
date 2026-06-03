@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import CandidateCard from "./candidate-card";
 
 interface Candidate {
@@ -14,6 +14,7 @@ interface Candidate {
 
 interface Props {
   candidates: Candidate[];
+  initialSelectedId?: string | null;
   onConfirm: (ids: string[]) => void;
   onReject: (id: string) => void;
   onDelete: (id: string) => void;
@@ -25,6 +26,7 @@ interface Props {
 
 export default function CandidateList({
   candidates,
+  initialSelectedId = null,
   onConfirm,
   onReject,
   onDelete,
@@ -34,6 +36,27 @@ export default function CandidateList({
   loading,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!initialSelectedId) {
+      return;
+    }
+
+    const targetExists = candidates.some(
+      (candidate) => candidate.id === initialSelectedId
+    );
+
+    if (!targetExists) {
+      return;
+    }
+
+    setSelected(new Set([initialSelectedId]));
+
+    window.requestAnimationFrame(() => {
+      const element = document.getElementById(`candidate-${initialSelectedId}`);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [candidates, initialSelectedId]);
 
   const toggle = (id: string) => {
     const next = new Set(selected);
@@ -123,6 +146,7 @@ export default function CandidateList({
             key={c.id}
             candidate={c}
             selected={selected.has(c.id)}
+            highlighted={initialSelectedId === c.id}
             onToggle={toggle}
             onEdit={onEdit}
             onReject={onReject}

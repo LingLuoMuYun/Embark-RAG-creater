@@ -1,3 +1,5 @@
+import { getSourceTypeLabel } from "@/lib/source-type";
+
 type RecentKnowledgeItem = {
   id: string;
   knowledgeBaseId: string | null;
@@ -12,14 +14,6 @@ type RecentKnowledgeListProps = {
   items: RecentKnowledgeItem[];
 };
 
-const SOURCE_LABELS: Record<string, string> = {
-  manual: "手动录入",
-  file: "文件导入",
-  wiki: "Wiki 提炼",
-  import: "外部导入",
-  conversation: "对话沉淀",
-};
-
 function formatDate(value: string): string {
   return new Date(value).toLocaleString("zh-CN", {
     month: "2-digit",
@@ -27,6 +21,13 @@ function formatDate(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatStatus(status: string) {
+  if (status === "pending") return "待确认";
+  if (status === "confirmed") return "已确认";
+  if (status === "rejected") return "已驳回";
+  return status;
 }
 
 export function RecentKnowledgeList({ items }: RecentKnowledgeListProps) {
@@ -44,9 +45,8 @@ export function RecentKnowledgeList({ items }: RecentKnowledgeListProps) {
                 {item.title}
               </p>
               <p className="mt-1 text-xs text-zinc-500">
-                {SOURCE_LABELS[item.sourceType] ?? item.sourceType} ·{" "}
-                {item.status === "pending" ? "待确认" : item.status} ·{" "}
-                {formatDate(item.createdAt)}
+                {getSourceTypeLabel(item.sourceType)} ·{" "}
+                {formatStatus(item.status)} · {formatDate(item.createdAt)}
               </p>
             </div>
           ))}

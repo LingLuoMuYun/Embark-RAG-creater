@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { RagDoc } from "@/features/knowledge-bases/types";
 import { formatFileSize } from "@/features/knowledge-bases/utils";
+import { getSourceTypeLabel } from "@/lib/source-type";
 
 import { DocumentChunkList } from "./document-chunk-list";
 
@@ -72,7 +73,9 @@ export function AssignmentDocumentItem({
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline">{document.fileType ?? "file"}</Badge>
                 <Badge variant="outline">
-                  {document.sourceType ?? "manual"}
+                  {getSourceTypeLabel(document.sourceType, {
+                    fileType: document.fileType,
+                  })}
                 </Badge>
                 <Badge variant="secondary">
                   {document.status ?? "pending"}

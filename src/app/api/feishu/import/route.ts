@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
       originalName: title,
       fileType: "md",
       fileSize: content.length,
+      sourceType: "url",
     });
 
     // 1. 标记解析中

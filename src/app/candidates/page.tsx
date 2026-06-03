@@ -36,6 +36,9 @@ export default function CandidatesPage() {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseItem[]>(
     []
   );
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(
+    null
+  );
 
   const router = useRouter();
 
@@ -70,6 +73,11 @@ export default function CandidatesPage() {
   };
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      setSelectedCandidateId(params.get("candidateId"));
+    }
+
     fetchCandidates();
     fetchKnowledgeBases();
   }, []);
@@ -222,6 +230,7 @@ export default function CandidatesPage() {
         ) : (
           <CandidateList
             candidates={candidates}
+            initialSelectedId={selectedCandidateId}
             onConfirm={handleConfirmRequest}
             onReject={handleReject}
             onDelete={handleDelete}

@@ -50,15 +50,12 @@ export async function createKnowledgeBase(payload: unknown) {
 
 // 获取单个知识库详情树，包含关联文档和知识分片。
 export async function fetchRagDetail(id: string) {
-  const response = await fetch(
-    `/api/rag-management/knowledge-bases/${id}/tree`,
-    {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-    }
-  );
+  const response = await fetch(`/api/knowledge-bases/${id}/tree`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
 
   if (!response.ok) {
     throw new Error(

@@ -12,7 +12,7 @@ type KnowledgeBaseListRecord = {
   documents: {
     document: {
       chunks: { id: string }[];
-    };
+    } | null;
   }[];
 };
 
@@ -87,6 +87,16 @@ export function mapDocumentChunk(chunk: DocumentChunkRecord) {
 }
 
 export function mapKnowledgeBaseListItem(item: KnowledgeBaseListRecord) {
+  const validDocuments = item.documents.filter(
+    (
+      relation
+    ): relation is {
+      document: {
+        chunks: { id: string }[];
+      };
+    } => relation.document !== null
+  );
+
   return {
     id: item.id,
     name: item.name,
@@ -96,8 +106,8 @@ export function mapKnowledgeBaseListItem(item: KnowledgeBaseListRecord) {
     similarityThreshold: item.similarityThreshold,
     topK: item.topK,
     status: item.status,
-    documentCount: item.documents.length,
-    chunkCount: item.documents.reduce(
+    documentCount: validDocuments.length,
+    chunkCount: validDocuments.reduce(
       (sum, relation) => sum + relation.document.chunks.length,
       0
     ),
@@ -175,13 +185,23 @@ type KnowledgeBaseTreeRecord = Omit<KnowledgeBaseListRecord, "documents"> & {
     id: string;
     status: string;
     sortOrder: number;
-    document: DocumentSourceRecord & {
+    document: (DocumentSourceRecord & {
       chunks: DocumentChunkRecord[];
-    };
+    }) | null;
   }[];
 };
 
 export function mapKnowledgeBaseTree(item: KnowledgeBaseTreeRecord) {
+  const validDocuments = item.documents.filter(
+    (
+      relation
+    ): relation is Omit<typeof relation, "document"> & {
+      document: DocumentSourceRecord & {
+        chunks: DocumentChunkRecord[];
+      };
+    } => relation.document !== null
+  );
+
   return {
     id: item.id,
     name: item.name,
@@ -193,11 +213,11 @@ export function mapKnowledgeBaseTree(item: KnowledgeBaseTreeRecord) {
     status: item.status,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
-    documents: item.documents.map((relation) => ({
-      relationId: relation.id,
-      relationStatus: relation.status,
-      sortOrder: relation.sortOrder,
-      ...mapDocumentSourceDetail(relation.document),
-    })),
+    documents: validDocuments.map((relation) => ({
+        relationId: relation.id,
+        relationStatus: relation.status,
+        sortOrder: relation.sortOrder,
+        ...mapDocumentSourceDetail(relation.document),
+      })),
   };
 }
