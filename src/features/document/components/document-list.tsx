@@ -198,12 +198,11 @@ export function DocumentList({ refreshKey, onParse, onPreview }: DocumentListPro
         emptyPollCount = 0;
       }
 
-      // Show 100% briefly before refreshing
+      // Refresh list immediately when any doc completes
       if (hasNewDone) {
+        fetchDocuments();
         if (doneIds.size >= ids.length) {
-          setTimeout(() => finish(), 800);
-        } else {
-          fetchDocuments();
+          finish();
         }
       }
     };
