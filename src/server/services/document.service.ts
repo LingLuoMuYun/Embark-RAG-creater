@@ -221,6 +221,7 @@ export type DocumentCreateInput = {
   originalName: string;
   fileType: string;
   fileSize: number;
+  sourceType?: string;
 };
 
 export type DocumentListOptions = {
@@ -239,6 +240,7 @@ export async function createDocument(input: DocumentCreateInput) {
       title: input.originalName,
       fileType: input.fileType,
       fileSize: input.fileSize,
+      sourceType: input.sourceType ?? "file",
       status: "uploading",
     },
   });

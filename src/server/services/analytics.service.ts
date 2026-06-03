@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getSourceTypeLabel } from "@/lib/source-type";
 import type { UsageLogCreateInput } from "@/features/analytics/analytics.validation";
 import { parseAgentKnowledgeScope } from "@/features/agent/agent.validation";
 
@@ -25,6 +26,17 @@ type UsageTrendDay = {
   date: string;
   questionCount: number;
   knowledgeCount: number;
+};
+
+type RecentDocumentItem = {
+  id: string;
+  originalName: string;
+  fileType: string;
+  status: string;
+  chunkCount: number;
+  candidatePending: number;
+  candidateConfirmed: number;
+  createdAt: string;
 };
 
 export type DashboardAgent = {
@@ -101,7 +113,10 @@ function normalizeReferences(input: UsageLogCreateInput) {
 }
 
 function toDateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function buildActivityDays(documents: { createdAt: Date }[]): ActivityDay[] {
@@ -128,7 +143,7 @@ function buildActivityDays(documents: { createdAt: Date }[]): ActivityDay[] {
 
 function buildUsageTrendDays(input: {
   usageLogs: { createdAt: Date }[];
-  knowledgeChunks: { createdAt: Date }[];
+  knowledgeChunks: { updatedAt: Date }[];
 }): UsageTrendDay[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -141,7 +156,7 @@ function buildUsageTrendDays(input: {
 
   const knowledgeCounts = new Map<string, number>();
   for (const chunk of input.knowledgeChunks) {
-    const key = toDateKey(chunk.createdAt);
+    const key = toDateKey(chunk.updatedAt);
     knowledgeCounts.set(key, (knowledgeCounts.get(key) ?? 0) + 1);
   }
 
@@ -189,7 +204,7 @@ async function getSourceDistribution(): Promise<SourceDistributionItem[]> {
 
   return groups.map((group) => ({
     sourceType: group.sourceType,
-    label: SOURCE_TYPE_LABELS[group.sourceType] ?? group.sourceType,
+    label: getSourceTypeLabel(group.sourceType),
     count: group._count.sourceType,
   }));
 }
@@ -226,6 +241,78 @@ async function getRecentAgents(limit = RECENT_AGENT_LIMIT): Promise<DashboardAge
       knowledgeBaseCount: scope.knowledgeBaseIds.length,
       conversationCount: agent._count.conversations,
       updatedAt: agent.updatedAt.toISOString(),
+    };
+  });
+}
+
+async function getRecentDocuments(
+  limit = RECENT_DOCUMENT_LIMIT
+): Promise<RecentDocumentItem[]> {
+  const documents = await prisma.documentSource.findMany({
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      originalName: true,
+      fileType: true,
+      status: true,
+      chunkCount: true,
+      createdAt: true,
+    },
+  });
+
+  const candidateGroups = await prisma.documentChunk.groupBy({
+    by: ["documentSourceId", "reviewStatus"],
+    where: {
+      chunkType: "knowledge",
+      reviewStatus: {
+        not: null,
+      },
+      documentSourceId: {
+        in: documents.map((document) => document.id),
+      },
+    },
+    _count: {
+      reviewStatus: true,
+    },
+  });
+
+  const candidateMap = new Map<
+    string,
+    { candidatePending: number; candidateConfirmed: number }
+  >();
+
+  for (const group of candidateGroups) {
+    if (!group.documentSourceId) {
+      continue;
+    }
+
+    const current = candidateMap.get(group.documentSourceId) ?? {
+      candidatePending: 0,
+      candidateConfirmed: 0,
+    };
+
+    if (group.reviewStatus === "pending") {
+      current.candidatePending = group._count.reviewStatus;
+    }
+
+    if (group.reviewStatus === "confirmed") {
+      current.candidateConfirmed = group._count.reviewStatus;
+    }
+
+    candidateMap.set(group.documentSourceId, current);
+  }
+
+  return documents.map((document) => {
+    const candidateCounts = candidateMap.get(document.id) ?? {
+      candidatePending: 0,
+      candidateConfirmed: 0,
+    };
+
+    return {
+      ...document,
+      ...candidateCounts,
+      createdAt: document.createdAt.toISOString(),
     };
   });
 }
@@ -387,6 +474,9 @@ export async function getRecentKnowledge(limit = 10) {
       id: true,
       title: true,
       content: true,
+      suggestedCategory: true,
+      suggestedTags: true,
+      knowledgeType: true,
       reviewStatus: true,
       chunkStatus: true,
       createdAt: true,
@@ -404,6 +494,16 @@ export async function getRecentKnowledge(limit = 10) {
     id: chunk.id,
     knowledgeBaseId: chunk.documentSource?.knowledgeBaseId ?? null,
     title: fallbackKnowledgeTitle(chunk),
+    content: chunk.content,
+    suggestedCategory: chunk.suggestedCategory,
+    suggestedTags: (() => {
+      try {
+        return chunk.suggestedTags ? JSON.parse(chunk.suggestedTags) : [];
+      } catch {
+        return [];
+      }
+    })(),
+    type: chunk.knowledgeType ?? "concept",
     sourceType: chunk.documentSource?.sourceType ?? "manual",
     status: chunk.reviewStatus ?? chunk.chunkStatus,
     parseStatus: chunk.documentSource?.status ?? "parsed",
@@ -575,18 +675,7 @@ export async function getAnalyticsOverview() {
       orderBy: { status: "asc" },
     }),
     // Recent documents: newest DocumentSource rows.
-    prisma.documentSource.findMany({
-      orderBy: { createdAt: "desc" },
-      take: RECENT_DOCUMENT_LIMIT,
-      select: {
-        id: true,
-        originalName: true,
-        fileType: true,
-        status: true,
-        chunkCount: true,
-        createdAt: true,
-      },
-    }),
+    getRecentDocuments(RECENT_DOCUMENT_LIMIT),
     // 7-day activity trend: DocumentSource.createdAt.
     prisma.documentSource.findMany({
       where: {
@@ -609,16 +698,18 @@ export async function getAnalyticsOverview() {
         createdAt: true,
       },
     }),
-    // 7-day knowledge trend: knowledge-type chunks are AI-extracted knowledge.
+    // 7-day knowledge trend: only confirmed + active knowledge is counted as usable.
     prisma.documentChunk.findMany({
       where: {
         chunkType: "knowledge",
-        createdAt: {
+        reviewStatus: "confirmed",
+        chunkStatus: "active",
+        updatedAt: {
           gte: activityStart,
         },
       },
       select: {
-        createdAt: true,
+        updatedAt: true,
       },
     }),
     getHotKnowledge(5),
@@ -694,10 +785,7 @@ export async function getAnalyticsOverview() {
       documents: normalizeStatusCounts(documentStatusGroups),
       agents: normalizeStatusCounts(agentStatusGroups),
     },
-    recentDocuments: recentDocuments.map((document) => ({
-      ...document,
-      createdAt: document.createdAt.toISOString(),
-    })),
+    recentDocuments,
     documentActivity: buildActivityDays(activityDocuments),
     usageTrend: buildUsageTrendDays({
       usageLogs: trendUsageLogs,
