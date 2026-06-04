@@ -28,6 +28,7 @@ import {
   streamChatCompletion,
   type LlmMessage,
 } from "@/server/services/agent/llm-client";
+import { createUsageLog } from "@/server/services/analytics.service";
 
 const encoder = new TextEncoder();
 
@@ -104,6 +105,10 @@ export async function POST(request: NextRequest) {
             citations: [],
             knowledgeFiles: result.knowledgeFiles,
           });
+          await reportKnowledgeAgentUsage({
+            query: parsed.data.message,
+            knowledgeFiles: result.knowledgeFiles,
+          });
           send("done", { ok: true });
           return;
         }
@@ -134,6 +139,15 @@ export async function POST(request: NextRequest) {
           assistantMessage: answer,
           citations: prepared.citations,
         });
+        if (
+          parsed.data.chatMode === "agent" ||
+          parsed.data.chatMode === "openai"
+        ) {
+          await reportDirectChatUsage({
+            query: parsed.data.message,
+            chatMode: parsed.data.chatMode,
+          });
+        }
 
         send("done", { ok: true });
       } catch (error) {
@@ -402,6 +416,123 @@ async function reportRagUsage(input: {
   } catch (error) {
     console.warn("Failed to report RAG usage log", error);
   }
+}
+
+async function reportKnowledgeAgentUsage(input: {
+  query: string;
+  knowledgeFiles: KnowledgeFile[];
+}) {
+  try {
+    const references = await buildKnowledgeAgentReferences(input.knowledgeFiles);
+    const scopeKnowledgeBaseIds = Array.from(
+      new Set(references.map((reference) => reference.knowledgeBaseId))
+    );
+
+    if (scopeKnowledgeBaseIds.length === 0) {
+      const activeKnowledgeBases = await prisma.knowledgeBase.findMany({
+        where: { status: "active" },
+        select: { id: true },
+      });
+      scopeKnowledgeBaseIds.push(
+        ...activeKnowledgeBases.map((knowledgeBase) => knowledgeBase.id)
+      );
+    }
+
+    await createUsageLog({
+      query: input.query,
+      mode: "balanced",
+      scope: {
+        knowledgeBaseIds:
+          scopeKnowledgeBaseIds.length > 0
+            ? scopeKnowledgeBaseIds
+            : ["knowledge-agent"],
+      },
+      contexts: [],
+      references,
+    });
+  } catch (error) {
+    console.warn("Failed to report knowledge-agent usage log", error);
+  }
+}
+
+async function reportDirectChatUsage(input: {
+  query: string;
+  chatMode: "agent" | "openai";
+}) {
+  try {
+    await createUsageLog({
+      source: input.chatMode === "agent" ? "agent_chat" : "openai_chat",
+      query: input.query,
+      mode: "balanced",
+      scope: {
+        knowledgeBaseIds: [input.chatMode],
+      },
+      contexts: [],
+      references: [],
+      noHit: false,
+    });
+  } catch (error) {
+    console.warn("Failed to report direct chat usage log", error);
+  }
+}
+
+async function buildKnowledgeAgentReferences(knowledgeFiles: KnowledgeFile[]) {
+  if (knowledgeFiles.length === 0) return [];
+
+  const documents = await prisma.documentSource.findMany({
+    where: {
+      id: {
+        in: knowledgeFiles.map((file) => file.id),
+      },
+    },
+    include: {
+      chunks: {
+        where: {
+          chunkStatus: "active",
+          OR: [
+            { chunkType: "text" },
+            { chunkType: "knowledge", reviewStatus: "confirmed" },
+          ],
+        },
+        orderBy: { chunkIndex: "asc" },
+        take: 1,
+      },
+      knowledgeBases: {
+        where: {
+          status: "active",
+          knowledgeBase: {
+            status: "active",
+          },
+        },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+
+  return documents.flatMap((document) => {
+    const chunk = document.chunks[0];
+    const relation = document.knowledgeBases[0];
+    if (!chunk || !relation) return [];
+
+    return [
+      {
+        knowledgeBaseId: relation.knowledgeBaseId,
+        knowledgeId: document.id,
+        chunkId: chunk.id,
+        title: chunk.title ?? document.title ?? document.originalName,
+        chunkType:
+          chunk.chunkType === "knowledge"
+            ? chunk.knowledgeType === "faq"
+              ? "qa"
+              : "summary"
+            : chunk.chunkType === "wiki" ||
+                chunk.chunkType === "summary" ||
+                chunk.chunkType === "qa"
+              ? chunk.chunkType
+              : "text",
+      } as const,
+    ];
+  });
 }
 
 function buildPlainChatMessages(
