@@ -79,12 +79,12 @@ function buildKnowledgeBoundaryInstruction(scope: AgentKnowledgeScope): string {
     );
   }
 
-  if (scope.chunkTypes.length > 0) {
+  if (scope.categoryIds.length > 0) {
     lines.push(
-      `当前配置限定可使用的知识片段类型为：${scope.chunkTypes.join("、")}。`
+      `当前配置限定可使用的知识分类为：${scope.categoryIds.join("、")}。系统检索时会在已绑定知识库内按这些分类继续收窄。`
     );
   } else {
-    lines.push("当前不限定知识片段类型，以系统检索上下文为准。");
+    lines.push("当前不限定知识分类，以已绑定知识库内的系统检索上下文为准。");
   }
 
   return lines.join("\n");

@@ -256,6 +256,9 @@ async function countAvailableKnowledgeChunks(
   if (scope.knowledgeIds.length > 0) {
     where.documentSourceId = { in: scope.knowledgeIds };
   }
+  if (scope.categoryIds.length > 0) {
+    where.suggestedCategory = { in: scope.categoryIds };
+  }
 
   return prisma.documentChunk.count({ where });
 }
@@ -263,9 +266,7 @@ async function countAvailableKnowledgeChunks(
 function getUncheckedScopeFields(scope: AgentKnowledgeScope): string[] {
   const fields: string[] = [];
 
-  if (scope.categoryIds.length > 0) fields.push("分类范围");
   if (scope.tagIds.length > 0) fields.push("标签范围");
-  if (scope.chunkTypes.length > 0) fields.push("chunkTypes");
 
   return fields;
 }
