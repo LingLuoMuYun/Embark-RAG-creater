@@ -39,12 +39,13 @@ export type AgentValidationResult = {
 };
 
 export async function createAgent(input: AgentCreateInput): Promise<AgentDTO> {
+  const knowledgeScope = toKnowledgeBaseOnlyScope(input.knowledgeScope);
   const agent = await prisma.expertAgent.create({
     data: {
       name: input.name,
       description: input.description,
       answerStyle: input.answerStyle,
-      knowledgeScope: stringifyAgentKnowledgeScope(input.knowledgeScope),
+      knowledgeScope: stringifyAgentKnowledgeScope(knowledgeScope),
       showReferences: input.showReferences,
       allowKnowledgeCapture: input.allowKnowledgeCapture,
       status: input.status,
@@ -104,7 +105,9 @@ export async function updateAgent(
   if (input.description !== undefined) data.description = input.description;
   if (input.answerStyle !== undefined) data.answerStyle = input.answerStyle;
   if (input.knowledgeScope !== undefined) {
-    data.knowledgeScope = stringifyAgentKnowledgeScope(input.knowledgeScope);
+    data.knowledgeScope = stringifyAgentKnowledgeScope(
+      toKnowledgeBaseOnlyScope(input.knowledgeScope)
+    );
   }
   if (input.showReferences !== undefined) {
     data.showReferences = input.showReferences;
@@ -139,9 +142,9 @@ export async function validateAgentAvailability(
 
   const reasons: string[] = [];
   const warnings: string[] = [];
-  const scope = agent.knowledgeScope;
+  const scope = toKnowledgeBaseOnlyScope(agent.knowledgeScope);
   const activeStatuses = ["active", "available"];
-  const uncheckedScopeFields = getUncheckedScopeFields(scope);
+  const uncheckedScopeFields: string[] = [];
   const hasKnowledgeBaseScope = scope.knowledgeBaseIds.length > 0;
 
   if (agent.status === "disabled") {
@@ -221,7 +224,7 @@ export async function generateAgentSystemPrompt(
     name: current.name,
     description: current.description,
     answerStyle: current.answerStyle,
-    knowledgeScope: current.knowledgeScope,
+    knowledgeScope: toKnowledgeBaseOnlyScope(current.knowledgeScope),
     showReferences: current.showReferences,
     allowKnowledgeCapture: current.allowKnowledgeCapture,
   });
@@ -240,6 +243,19 @@ function toAgentDTO(agent: ExpertAgent): AgentDTO {
   };
 }
 
+function toKnowledgeBaseOnlyScope(
+  scope: AgentKnowledgeScope
+): AgentKnowledgeScope {
+  return {
+    ...scope,
+    mode: "knowledgeBases",
+    categoryIds: [],
+    tagIds: [],
+    knowledgeIds: [],
+    chunkTypes: [],
+  };
+}
+
 async function countAvailableKnowledgeChunks(
   scope: AgentKnowledgeScope,
   activeStatuses: string[]
@@ -253,20 +269,5 @@ async function countAvailableKnowledgeChunks(
     },
   };
 
-  if (scope.knowledgeIds.length > 0) {
-    where.documentSourceId = { in: scope.knowledgeIds };
-  }
-  if (scope.categoryIds.length > 0) {
-    where.suggestedCategory = { in: scope.categoryIds };
-  }
-
   return prisma.documentChunk.count({ where });
-}
-
-function getUncheckedScopeFields(scope: AgentKnowledgeScope): string[] {
-  const fields: string[] = [];
-
-  if (scope.tagIds.length > 0) fields.push("标签范围");
-
-  return fields;
 }
