@@ -410,13 +410,19 @@ function buildDashboardInsights(input: {
   return [actionInsight, usageInsight];
 }
 
-export async function createUsageLog(input: UsageLogCreateInput) {
+export async function createUsageLog(
+  input: UsageLogCreateInput & {
+    source?: string;
+    noHit?: boolean;
+  }
+) {
   const references = normalizeReferences(input);
-  const noHit = input.contexts.length === 0 && references.length === 0;
+  const noHit =
+    input.noHit ?? (input.contexts.length === 0 && references.length === 0);
 
   return prisma.usageLog.create({
     data: {
-      source: "rag_retrieve",
+      source: input.source ?? "rag_retrieve",
       query: input.query,
       mode: input.mode,
       scope: JSON.stringify(input.scope),
