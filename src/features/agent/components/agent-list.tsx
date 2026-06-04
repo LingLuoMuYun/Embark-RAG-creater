@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
-  AgentChunkType,
   AgentKnowledgeScope,
   AgentKnowledgeScopeMode,
 } from "@/features/agent/agent.types";
@@ -92,13 +91,6 @@ const SCOPE_MODE_LABELS: Record<AgentKnowledgeScopeMode, string> = {
   knowledgeItems: "指定知识",
 };
 
-const CHUNK_TYPE_LABELS: Record<AgentChunkType, string> = {
-  text: "文本",
-  wiki: "Wiki",
-  summary: "摘要",
-  qa: "问答",
-};
-
 const AGENT_LIST_REQUEST_TIMEOUT_MS = 15_000;
 
 function formatDate(dateStr: string): string {
@@ -134,13 +126,6 @@ function formatScopeSummary(scope: AgentKnowledgeScope): string {
   ].filter(Boolean);
 
   return parts.join(" / ");
-}
-
-function formatChunkTypes(scope: AgentKnowledgeScope): string {
-  if (scope.chunkTypes.length === 0) return "不限类型";
-  return scope.chunkTypes
-    .map((type) => CHUNK_TYPE_LABELS[type] ?? type)
-    .join("、");
 }
 
 function getValidationText(state?: ValidationState): {
@@ -418,9 +403,6 @@ export function AgentList({ refreshKey, onRefresh }: AgentListProps) {
                     <td className="max-w-[300px] px-4 py-3">
                       <div className="text-zinc-800">
                         {formatScopeSummary(agent.knowledgeScope)}
-                      </div>
-                      <div className="mt-1 text-xs text-zinc-500">
-                        {formatChunkTypes(agent.knowledgeScope)}
                       </div>
                     </td>
                     <td className="px-4 py-3">

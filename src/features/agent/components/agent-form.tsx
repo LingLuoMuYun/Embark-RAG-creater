@@ -4,11 +4,8 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { buildAgentSystemPrompt } from "@/features/agent/agent-prompt";
+import { KnowledgeCategoryScopeSelect } from "@/features/agent/components/knowledge-category-scope-select";
 import { KnowledgeBaseScopeSelect } from "@/features/agent/components/knowledge-base-scope-select";
-import {
-  AGENT_CHUNK_TYPES,
-  type AgentChunkType,
-} from "@/features/agent/agent.types";
 import {
   DEFAULT_AGENT_KNOWLEDGE_SCOPE,
   agentCreateSchema,
@@ -79,13 +76,6 @@ const STATUS_OPTIONS = [
   { value: "disabled", label: "停用", description: "保留配置但不可使用。" },
 ];
 
-const CHUNK_TYPE_LABELS: Record<AgentChunkType, string> = {
-  text: "文本",
-  wiki: "LLM Wiki",
-  summary: "摘要",
-  qa: "问答",
-};
-
 const READINESS_COLORS: Record<ReadinessStatus, string> = {
   pass: "border-emerald-200 bg-emerald-50 text-emerald-700",
   warn: "border-amber-200 bg-amber-50 text-amber-700",
@@ -119,9 +109,7 @@ function createDefaultValues(
       knowledgeIds:
         initialValues?.knowledgeScope?.knowledgeIds ??
         DEFAULT_AGENT_KNOWLEDGE_SCOPE.knowledgeIds,
-      chunkTypes:
-        initialValues?.knowledgeScope?.chunkTypes ??
-        DEFAULT_AGENT_KNOWLEDGE_SCOPE.chunkTypes,
+      chunkTypes: [],
     },
     showReferences: initialValues?.showReferences ?? true,
     allowKnowledgeCapture: initialValues?.allowKnowledgeCapture ?? false,
@@ -148,12 +136,12 @@ function buildLocalReadiness(values: AgentFormValues): ReadinessCheck[] {
         : "RAG scope 至少需要一个知识库 ID",
     },
     {
-      label: "片段类型",
-      status: scope.chunkTypes.length > 0 ? "pass" : "info",
+      label: "分类约束",
+      status: scope.categoryIds.length > 0 ? "pass" : "info",
       detail:
-        scope.chunkTypes.length > 0
-          ? scope.chunkTypes.map((type) => CHUNK_TYPE_LABELS[type]).join("、")
-          : "不限 chunkTypes",
+        scope.categoryIds.length > 0
+          ? `已限定 ${scope.categoryIds.length} 个分类`
+          : "不限定分类",
     },
     {
       label: "发布状态",
@@ -205,23 +193,6 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
     setValues((current) => ({ ...current, [key]: value }));
   };
 
-  const toggleChunkType = (type: AgentChunkType) => {
-    const current = values.knowledgeScope.chunkTypes;
-    const nextChunkTypes = current.includes(type)
-      ? current.filter((item) => item !== type)
-      : [...current, type];
-
-    setNotice(null);
-    setAvailability(null);
-    setValues((currentValues) => ({
-      ...currentValues,
-      knowledgeScope: {
-        ...currentValues.knowledgeScope,
-        chunkTypes: nextChunkTypes,
-      },
-    }));
-  };
-
   const handleKnowledgeBaseIdsChange = (nextIds: string[]) => {
     setNotice(null);
     setAvailability(null);
@@ -231,6 +202,18 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
         ...current.knowledgeScope,
         mode: "knowledgeBases",
         knowledgeBaseIds: nextIds,
+      },
+    }));
+  };
+
+  const handleCategoryValuesChange = (nextValues: string[]) => {
+    setNotice(null);
+    setAvailability(null);
+    setValues((current) => ({
+      ...current,
+      knowledgeScope: {
+        ...current.knowledgeScope,
+        categoryIds: nextValues,
       },
     }));
   };
@@ -267,6 +250,10 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
     const payload = {
       ...values,
       description: values.description?.trim() || undefined,
+      knowledgeScope: {
+        ...values.knowledgeScope,
+        chunkTypes: [],
+      },
       systemPrompt: previewPrompt,
     };
     const parsed = agentCreateSchema.safeParse(payload);
@@ -314,8 +301,8 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
             detail="检索边界"
           />
           <SummaryMetric
-            label="片段类型"
-            value={values.knowledgeScope.chunkTypes.length}
+            label="分类"
+            value={values.knowledgeScope.categoryIds.length}
             detail="可选约束"
           />
         </div>
@@ -372,7 +359,7 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
         <FormSection
           index="02"
           title="知识边界"
-          description="当前只做粗粒度知识库绑定，分类、标签和指定知识暂不开放配置。"
+          description="先绑定知识库，再按全局分类做可选收窄；标签和指定知识暂不开放配置。"
         >
           <div className="space-y-5">
             <KnowledgeBaseScopeSelect
@@ -380,34 +367,10 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
               onChange={handleKnowledgeBaseIdsChange}
             />
 
-            <div>
-              <span className="mb-2 block text-sm font-medium text-zinc-800">
-                知识片段类型
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {AGENT_CHUNK_TYPES.map((type) => {
-                  const checked = values.knowledgeScope.chunkTypes.includes(type);
-                  return (
-                    <label
-                      key={type}
-                      className={`flex min-h-9 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm transition-colors ${
-                        checked
-                          ? "border-cyan-300 bg-cyan-50 text-cyan-800"
-                          : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleChunkType(type)}
-                        className="h-3.5 w-3.5"
-                      />
-                      {CHUNK_TYPE_LABELS[type]}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
+            <KnowledgeCategoryScopeSelect
+              value={values.knowledgeScope.categoryIds}
+              onChange={handleCategoryValuesChange}
+            />
           </div>
         </FormSection>
 

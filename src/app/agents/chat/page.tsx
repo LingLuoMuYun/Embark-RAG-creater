@@ -116,21 +116,23 @@ type ChatAttachmentResponse = {
   };
 };
 
-const CHAT_MODE_OPTIONS: Array<{ value: ChatMode; label: string; hint: string }> =
-  [
-    {
-      value: "knowledge-agent",
-      label: "Knowledge Agent",
-      hint: "知识库消费助手",
-    },
-    { value: "agent", label: "Agent", hint: "角色对话" },
-    { value: "openai", label: "OpenAI", hint: "直接问模型" },
-  ];
+const CHAT_MODE_OPTIONS: Array<{
+  value: ChatMode;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "knowledge-agent",
+    label: "Knowledge Agent",
+    hint: "知识库消费助手",
+  },
+  { value: "agent", label: "Agent", hint: "角色对话" },
+  { value: "openai", label: "OpenAI", hint: "直接问模型" },
+];
 
 const AGENT_MENU_ITEM_HEIGHT = 56;
 const AGENT_MENU_VISIBLE_COUNT = 4;
-const AGENT_MENU_MAX_HEIGHT =
-  AGENT_MENU_ITEM_HEIGHT * AGENT_MENU_VISIBLE_COUNT;
+const AGENT_MENU_MAX_HEIGHT = AGENT_MENU_ITEM_HEIGHT * AGENT_MENU_VISIBLE_COUNT;
 
 export default function AgentChatPage() {
   const [agents, setAgents] = useState<AgentItem[]>([]);
@@ -167,9 +169,8 @@ export default function AgentChatPage() {
             label: "Skill Agent",
             hint: "Create API Skill",
           }
-        :
-      CHAT_MODE_OPTIONS.find((option) => option.value === chatMode) ??
-      CHAT_MODE_OPTIONS[0],
+        : CHAT_MODE_OPTIONS.find((option) => option.value === chatMode) ??
+          CHAT_MODE_OPTIONS[0],
     [chatMode]
   );
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally used for long chat histories.
@@ -186,7 +187,9 @@ export default function AgentChatPage() {
       .then((res) => res.json())
       .then((json: ConversationListResponse) => {
         if (!json.success || !json.data) {
-          throw new Error(json.error?.message || "Failed to load conversations");
+          throw new Error(
+            json.error?.message || "Failed to load conversations"
+          );
         }
         setConversations(json.data.items);
       })
@@ -211,8 +214,7 @@ export default function AgentChatPage() {
 
         const items = json.data.items;
         const hasInitialAgent =
-          initialAgentId &&
-          items.some((agent) => agent.id === initialAgentId);
+          initialAgentId && items.some((agent) => agent.id === initialAgentId);
 
         if (hasInitialAgent) {
           setChatMode("agent");
@@ -308,9 +310,9 @@ export default function AgentChatPage() {
         method: "POST",
         body: formData,
       });
-      const json = (await res.json().catch(() => null)) as
-        | ChatAttachmentResponse
-        | null;
+      const json = (await res
+        .json()
+        .catch(() => null)) as ChatAttachmentResponse | null;
 
       if (!res.ok || !json?.success || !json.data) {
         throw new Error(json?.error?.message || "附件上传失败");
@@ -378,7 +380,10 @@ export default function AgentChatPage() {
     }
 
     try {
-      const endpoint = "/api/chat";
+      const endpoint =
+        chatMode === "agent" && agentId
+          ? `/api/agents/${agentId}/chat`
+          : "/api/chat";
       const attachmentIds = attachments
         .filter((attachment) => attachment.status === "ready")
         .map((attachment) => attachment.id);
@@ -386,14 +391,22 @@ export default function AgentChatPage() {
         method: "POST",
         signal: abortController.signal,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          conversationId,
-          ...(agentId ? { agentId } : {}),
-          chatMode,
-          llmInterface: "openai",
-          attachmentIds,
-        }),
+        body: JSON.stringify(
+          chatMode === "agent" && agentId
+            ? {
+                message,
+                conversationId,
+                llmInterface: "openai",
+              }
+            : {
+                message,
+                conversationId,
+                ...(agentId ? { agentId } : {}),
+                chatMode,
+                llmInterface: "openai",
+                attachmentIds,
+              }
+        ),
       });
 
       if (!res.ok || !res.body) {
@@ -433,9 +446,7 @@ export default function AgentChatPage() {
         ragSummary: (ragSummary) => {
           setMessages((prev) =>
             prev.map((item) =>
-              item.id === assistantMessage.id
-                ? { ...item, ragSummary }
-                : item
+              item.id === assistantMessage.id ? { ...item, ragSummary } : item
             )
           );
         },
@@ -542,7 +553,9 @@ export default function AgentChatPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
-        throw new Error(json?.error?.message || "Failed to delete conversation");
+        throw new Error(
+          json?.error?.message || "Failed to delete conversation"
+        );
       }
 
       setConversations((prev) => prev.filter((item) => item.id !== id));
@@ -570,112 +583,51 @@ export default function AgentChatPage() {
   return (
     <AdminShell sidebarContent={sidebarContent}>
       <div className="flex h-[calc(100dvh-6.5rem)] min-h-[520px] overflow-hidden bg-[#f7faf8] text-slate-950">
-      <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.13),transparent_55%)]" />
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.13),transparent_55%)]" />
 
-        {messages.length > 0 && (
-          <header className="relative shrink-0 border-b border-slate-200/80 bg-white/85 px-4 py-3 shadow-sm backdrop-blur md:px-8">
-            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-md bg-emerald-700 text-white shadow-sm">
-                  <Sparkles aria-hidden="true" />
+          {messages.length > 0 && (
+            <header className="relative shrink-0 border-b border-slate-200/80 bg-white/85 px-4 py-3 shadow-sm backdrop-blur md:px-8">
+              <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-10 items-center justify-center rounded-md bg-emerald-700 text-white shadow-sm">
+                    <Sparkles aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">
+                      Embark 知识助手
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {currentChatMode.label}
+                      {currentAgent ? ` · ${currentAgent.name}` : ""}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
-                    Embark 知识助手
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {currentChatMode.label}
-                    {currentAgent ? ` · ${currentAgent.name}` : ""}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={startNewConversation}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                <Plus aria-hidden="true" />
-                新对话
-              </button>
-            </div>
-          </header>
-        )}
-
-        {messages.length === 0 ? (
-          <section className="relative flex min-h-0 flex-1 items-center justify-center px-4 py-10 md:px-8">
-            <div className="flex w-full max-w-4xl flex-col items-center gap-9">
-              <div className="flex flex-col items-center gap-3 text-center">
-                <div className="flex size-12 items-center justify-center rounded-md bg-emerald-700 text-white shadow-lg shadow-emerald-900/15">
-                  <Sparkles aria-hidden="true" />
-                </div>
-                <h1 className="text-3xl font-semibold tracking-normal text-slate-950 md:text-4xl">
-                  Hi，我是 Embark，让你的知识触手可及
-                </h1>
-              </div>
-
-              <ChatComposer
-                value={input}
-                attachments={attachments}
-                loading={loading}
-                uploadingAttachment={uploadingAttachment}
-                error={error}
-                menuOpen={menuOpen}
-                currentChatMode={currentChatMode}
-                chatMode={chatMode}
-                agents={agents}
-                agentId={agentId}
-                onValueChange={setInput}
-                onSubmit={sendMessage}
-                onStop={stopMessage}
-                onUploadAttachment={uploadAttachment}
-                onRemoveAttachment={removeAttachment}
-                onMenuOpenChange={setMenuOpen}
-                onModeChange={setChatMode}
-                onAgentChange={setAgentId}
-              />
-            </div>
-          </section>
-        ) : (
-          <>
-            <section
-              ref={scrollContainerRef}
-              onScroll={handleMessageScroll}
-              className="relative min-h-0 flex-1 overflow-y-auto px-4 py-7 md:px-8"
-            >
-              <div className="mx-auto max-w-5xl">
-                <div
-                  className="relative w-full"
-                  style={{
-                    height: `${messageVirtualizer.getTotalSize()}px`,
-                  }}
+                <button
+                  type="button"
+                  onClick={startNewConversation}
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                 >
-                  {messageVirtualizer.getVirtualItems().map((virtualItem) => {
-                    const message = messages[virtualItem.index];
-                    if (!message) return null;
-
-                    return (
-                      <div
-                        key={virtualItem.key}
-                        ref={messageVirtualizer.measureElement}
-                        data-index={virtualItem.index}
-                        className="absolute left-0 top-0 w-full py-2"
-                        style={{
-                          transform: `translateY(${virtualItem.start}px)`,
-                        }}
-                      >
-                        <MessageBubble message={message} />
-                      </div>
-                    );
-                  })}
-                </div>
+                  <Plus aria-hidden="true" />
+                  新对话
+                </button>
               </div>
-            </section>
+            </header>
+          )}
 
-            <footer className="relative shrink-0 px-4 pb-1 md:px-8">
-              <div className="mx-auto max-w-5xl">
+          {messages.length === 0 ? (
+            <section className="relative flex min-h-0 flex-1 items-center justify-center px-4 py-10 md:px-8">
+              <div className="flex w-full max-w-4xl flex-col items-center gap-9">
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-md bg-emerald-700 text-white shadow-lg shadow-emerald-900/15">
+                    <Sparkles aria-hidden="true" />
+                  </div>
+                  <h1 className="text-3xl font-semibold tracking-normal text-slate-950 md:text-4xl">
+                    Hi，我是 Embark，让你的知识触手可及
+                  </h1>
+                </div>
+
                 <ChatComposer
-                  compact
                   value={input}
                   attachments={attachments}
                   loading={loading}
@@ -696,27 +648,88 @@ export default function AgentChatPage() {
                   onAgentChange={setAgentId}
                 />
               </div>
-            </footer>
-          </>
-        )}
-      </main>
-      {conversationMenu && (
-        <div
-          className="fixed z-50 min-w-32 rounded-md border border-slate-200 bg-white p-1 text-sm shadow-xl shadow-slate-900/10"
-          style={{ left: conversationMenu.x, top: conversationMenu.y }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={() => deleteConversation(conversationMenu.id)}
-            disabled={loading}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+            </section>
+          ) : (
+            <>
+              <section
+                ref={scrollContainerRef}
+                onScroll={handleMessageScroll}
+                className="relative min-h-0 flex-1 overflow-y-auto px-4 py-7 md:px-8"
+              >
+                <div className="mx-auto max-w-5xl">
+                  <div
+                    className="relative w-full"
+                    style={{
+                      height: `${messageVirtualizer.getTotalSize()}px`,
+                    }}
+                  >
+                    {messageVirtualizer.getVirtualItems().map((virtualItem) => {
+                      const message = messages[virtualItem.index];
+                      if (!message) return null;
+
+                      return (
+                        <div
+                          key={virtualItem.key}
+                          ref={messageVirtualizer.measureElement}
+                          data-index={virtualItem.index}
+                          className="absolute left-0 top-0 w-full py-2"
+                          style={{
+                            transform: `translateY(${virtualItem.start}px)`,
+                          }}
+                        >
+                          <MessageBubble message={message} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              <footer className="relative shrink-0 px-4 pb-1 md:px-8">
+                <div className="mx-auto max-w-5xl">
+                  <ChatComposer
+                    compact
+                    value={input}
+                    attachments={attachments}
+                    loading={loading}
+                    uploadingAttachment={uploadingAttachment}
+                    error={error}
+                    menuOpen={menuOpen}
+                    currentChatMode={currentChatMode}
+                    chatMode={chatMode}
+                    agents={agents}
+                    agentId={agentId}
+                    onValueChange={setInput}
+                    onSubmit={sendMessage}
+                    onStop={stopMessage}
+                    onUploadAttachment={uploadAttachment}
+                    onRemoveAttachment={removeAttachment}
+                    onMenuOpenChange={setMenuOpen}
+                    onModeChange={setChatMode}
+                    onAgentChange={setAgentId}
+                  />
+                </div>
+              </footer>
+            </>
+          )}
+        </main>
+        {conversationMenu && (
+          <div
+            className="fixed z-50 min-w-32 rounded-md border border-slate-200 bg-white p-1 text-sm shadow-xl shadow-slate-900/10"
+            style={{ left: conversationMenu.x, top: conversationMenu.y }}
+            onClick={(event) => event.stopPropagation()}
           >
-            <Trash2 aria-hidden="true" className="size-4" />
-            Delete
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={() => deleteConversation(conversationMenu.id)}
+              disabled={loading}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete
+            </button>
+          </div>
+        )}
       </div>
     </AdminShell>
   );
@@ -776,11 +789,7 @@ function ConversationSidebar({
                   onClick={() => onOpenConversation(conversation)}
                   onContextMenu={(event) => {
                     event.preventDefault();
-                    onOpenMenu(
-                      conversation.id,
-                      event.clientX,
-                      event.clientY
-                    );
+                    onOpenMenu(conversation.id, event.clientX, event.clientY);
                   }}
                   disabled={loading}
                   className={`group grid w-full grid-cols-[auto_1fr] gap-2 rounded-md px-2 py-2 text-left transition-colors ${
@@ -866,7 +875,9 @@ function ChatComposer({
   const agentMenuScrollRef = useRef<HTMLDivElement>(null);
   const currentAgent = agents.find((agent) => agent.id === agentId);
   const modeButtonLabel =
-    chatMode === "agent" && currentAgent ? currentAgent.name : currentChatMode.label;
+    chatMode === "agent" && currentAgent
+      ? currentAgent.name
+      : currentChatMode.label;
   const agentMenuItems = useMemo(
     () => [
       {
@@ -1161,8 +1172,8 @@ function AttachmentChip({
     attachment.status === "ready"
       ? "已解析"
       : attachment.status === "failed"
-        ? "解析失败"
-        : "解析中";
+      ? "解析失败"
+      : "解析中";
 
   return (
     <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
@@ -1209,9 +1220,11 @@ function MessageBubble({ message }: { message: UiMessage }) {
         <div className="whitespace-pre-wrap break-words">
           {message.content || (message.pending ? pendingText : "")}
         </div>
-        {!isUser && message.knowledgeFiles && message.knowledgeFiles.length > 0 && (
-          <KnowledgeFilesNotice files={message.knowledgeFiles} />
-        )}
+        {!isUser &&
+          message.knowledgeFiles &&
+          message.knowledgeFiles.length > 0 && (
+            <KnowledgeFilesNotice files={message.knowledgeFiles} />
+          )}
         {!isUser && <RagHitNotice summary={message.ragSummary} />}
         {!isUser && message.citations.length > 0 && (
           <CitationSources citations={message.citations} />
@@ -1255,7 +1268,11 @@ function KnowledgeFilesNotice({ files }: { files: KnowledgeFile[] }) {
 }
 
 function RagHitNotice({ summary }: { summary?: RagSummary }) {
-  if (!summary || summary.status === "not-applicable" || summary.status === "skipped") {
+  if (
+    !summary ||
+    summary.status === "not-applicable" ||
+    summary.status === "skipped"
+  ) {
     return null;
   }
 
@@ -1296,7 +1313,11 @@ function CitationSources({ citations }: { citations: ChatCitation[] }) {
             {expanded ? "收起" : `展开 ${hiddenCount} 条`}
             <ChevronDown
               aria-hidden="true"
-              className={expanded ? "rotate-180 transition-transform" : "transition-transform"}
+              className={
+                expanded
+                  ? "rotate-180 transition-transform"
+                  : "transition-transform"
+              }
             />
           </button>
         )}
@@ -1343,7 +1364,9 @@ function summarizeCitationContent(content: string) {
       : "结构化数据片段，已隐藏原始 JSON 内容";
   }
 
-  return normalized.length > 180 ? `${normalized.slice(0, 180)}...` : normalized;
+  return normalized.length > 180
+    ? `${normalized.slice(0, 180)}...`
+    : normalized;
 }
 
 function toClientChatMode(mode: string, agentId: string | null): ChatMode {
