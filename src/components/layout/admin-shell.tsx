@@ -9,9 +9,10 @@ import { AdminSidebar } from "@/components/layout/admin-sidebar";
 
 export type AdminShellProps = {
   children: React.ReactNode;
+  sidebarContent?: React.ReactNode;
 };
 
-export function AdminShell({ children }: AdminShellProps) {
+export function AdminShell({ children, sidebarContent }: AdminShellProps) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
 
@@ -19,7 +20,11 @@ export function AdminShell({ children }: AdminShellProps) {
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <AdminSidebar pathname={pathname} sidebarOpen={sidebarOpen} />
+      <AdminSidebar
+        pathname={pathname}
+        sidebarContent={sidebarContent}
+        sidebarOpen={sidebarOpen}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminHeader
           onToggleSidebar={() => setSidebarOpen((open) => !open)}

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { conversationIdSchema } from "@/features/agent/agent-chat.validation";
+import { conversationIdSchema } from "@/features/chat/chat.validation";
 import { listConversationMessages } from "@/server/services/agent/agent-chat.service";
 import { listChatConversationMessages } from "@/server/services/chat-conversation.service";
 

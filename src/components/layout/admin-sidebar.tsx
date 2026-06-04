@@ -14,9 +14,14 @@ import { cn } from "@/lib/utils";
 export type AdminSidebarProps = {
   sidebarOpen: boolean;
   pathname: string;
+  sidebarContent?: React.ReactNode;
 };
 
-export function AdminSidebar({ sidebarOpen, pathname }: AdminSidebarProps) {
+export function AdminSidebar({
+  sidebarContent,
+  sidebarOpen,
+  pathname,
+}: AdminSidebarProps) {
   const [collapsedParents, setCollapsedParents] = React.useState<
     Record<string, boolean>
   >({});
@@ -51,7 +56,7 @@ export function AdminSidebar({ sidebarOpen, pathname }: AdminSidebarProps) {
         ) : null}
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {adminNavItems.map((item) => {
           const active = isNavItemActive(item, pathname);
           const Icon = item.Icon;
@@ -130,6 +135,11 @@ export function AdminSidebar({ sidebarOpen, pathname }: AdminSidebarProps) {
             </div>
           );
         })}
+        {sidebarOpen && sidebarContent ? (
+          <div className="mt-3 border-t border-sidebar-border pt-3">
+            {sidebarContent}
+          </div>
+        ) : null}
       </nav>
     </aside>
   );

@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -15,11 +16,13 @@ import {
   FileText,
   Image as ImageIcon,
   Loader2,
+  MessageSquare,
   Paperclip,
   Plus,
   Send,
   Sparkles,
   Square,
+  Trash2,
   User,
   X,
 } from "lucide-react";
@@ -27,8 +30,9 @@ import {
 import { AdminShell } from "@/components/layout/admin-shell";
 import type {
   ChatCitation,
+  ChatConversationDTO,
   ChatMessageDTO,
-} from "@/features/agent/agent-chat.types";
+} from "@/features/chat/chat.types";
 
 type AgentItem = {
   id: string;
@@ -65,7 +69,7 @@ type UiMessage = Omit<ChatMessageDTO, "id" | "createdAt"> & {
   knowledgeFiles?: KnowledgeFile[];
 };
 
-type ChatMode = "knowledge-agent" | "agent" | "openai";
+type ChatMode = "knowledge-agent" | "skill-agent" | "agent" | "openai";
 
 type AgentListResponse = {
   success: boolean;
@@ -80,6 +84,16 @@ type AgentListResponse = {
 type MessageListResponse = {
   success: boolean;
   data?: ChatMessageDTO[];
+};
+
+type ConversationListResponse = {
+  success: boolean;
+  data?: {
+    items: ChatConversationDTO[];
+  };
+  error?: {
+    message?: string;
+  };
 };
 
 type ChatAttachment = {
@@ -120,9 +134,15 @@ const AGENT_MENU_MAX_HEIGHT =
 
 export default function AgentChatPage() {
   const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [conversations, setConversations] = useState<ChatConversationDTO[]>([]);
   const [agentId, setAgentId] = useState("");
   const [chatMode, setChatMode] = useState<ChatMode>("knowledge-agent");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [conversationMenu, setConversationMenu] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
@@ -141,6 +161,13 @@ export default function AgentChatPage() {
   );
   const currentChatMode = useMemo(
     () =>
+      chatMode === "skill-agent"
+        ? {
+            value: "skill-agent" as const,
+            label: "Skill Agent",
+            hint: "Create API Skill",
+          }
+        :
       CHAT_MODE_OPTIONS.find((option) => option.value === chatMode) ??
       CHAT_MODE_OPTIONS[0],
     [chatMode]
@@ -153,6 +180,22 @@ export default function AgentChatPage() {
     overscan: 6,
     getItemKey: (index) => messages[index]?.id ?? index,
   });
+
+  const fetchConversations = useCallback(() => {
+    fetch("/api/conversations?pageSize=100")
+      .then((res) => res.json())
+      .then((json: ConversationListResponse) => {
+        if (!json.success || !json.data) {
+          throw new Error(json.error?.message || "Failed to load conversations");
+        }
+        setConversations(json.data.items);
+      })
+      .catch((err) => {
+        setError(
+          err instanceof Error ? err.message : "Failed to load conversations"
+        );
+      });
+  }, []);
 
   useEffect(() => {
     const initialAgentId = new URLSearchParams(window.location.search).get(
@@ -188,6 +231,23 @@ export default function AgentChatPage() {
         setError(err instanceof Error ? err.message : "加载 Agent 失败");
       });
   }, []);
+
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  useEffect(() => {
+    if (!conversationMenu) return;
+
+    const close = () => setConversationMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("blur", close);
+
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("blur", close);
+    };
+  }, [conversationMenu]);
 
   useEffect(() => {
     if (!conversationId || loading) return;
@@ -399,6 +459,7 @@ export default function AgentChatPage() {
         )
       );
       setAttachments([]);
+      fetchConversations();
     } catch (err) {
       if (
         abortController.signal.aborted ||
@@ -455,8 +516,59 @@ export default function AgentChatPage() {
     shouldAutoScrollRef.current = true;
   }
 
+  function openConversation(conversation: ChatConversationDTO) {
+    if (loading) return;
+
+    chatAbortRef.current?.abort();
+    chatAbortRef.current = null;
+    setConversationId(conversation.id);
+    setMessages([]);
+    setInput("");
+    setAttachments([]);
+    setError(null);
+    setConversationMenu(null);
+    setAgentId(conversation.agentId ?? "");
+    setChatMode(toClientChatMode(conversation.mode, conversation.agentId));
+    shouldAutoScrollRef.current = true;
+  }
+
+  async function deleteConversation(id: string) {
+    if (loading) return;
+
+    setConversationMenu(null);
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "DELETE",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error?.message || "Failed to delete conversation");
+      }
+
+      setConversations((prev) => prev.filter((item) => item.id !== id));
+      if (conversationId === id) {
+        startNewConversation();
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete conversation"
+      );
+    }
+  }
+
+  const sidebarContent = (
+    <ConversationSidebar
+      conversations={conversations}
+      activeConversationId={conversationId}
+      loading={loading}
+      onNewConversation={startNewConversation}
+      onOpenConversation={openConversation}
+      onOpenMenu={(id, x, y) => setConversationMenu({ id, x, y })}
+    />
+  );
+
   return (
-    <AdminShell>
+    <AdminShell sidebarContent={sidebarContent}>
       <div className="flex h-[calc(100dvh-6.5rem)] min-h-[520px] overflow-hidden bg-[#f7faf8] text-slate-950">
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.13),transparent_55%)]" />
@@ -588,8 +700,123 @@ export default function AgentChatPage() {
           </>
         )}
       </main>
+      {conversationMenu && (
+        <div
+          className="fixed z-50 min-w-32 rounded-md border border-slate-200 bg-white p-1 text-sm shadow-xl shadow-slate-900/10"
+          style={{ left: conversationMenu.x, top: conversationMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => deleteConversation(conversationMenu.id)}
+            disabled={loading}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 aria-hidden="true" className="size-4" />
+            Delete
+          </button>
+        </div>
+      )}
       </div>
     </AdminShell>
+  );
+}
+
+function ConversationSidebar({
+  conversations,
+  activeConversationId,
+  loading,
+  onNewConversation,
+  onOpenConversation,
+  onOpenMenu,
+}: {
+  conversations: ChatConversationDTO[];
+  activeConversationId?: string;
+  loading: boolean;
+  onNewConversation: () => void;
+  onOpenConversation: (conversation: ChatConversationDTO) => void;
+  onOpenMenu: (id: string, x: number, y: number) => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-1 py-1">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-sidebar-foreground">
+            Conversations
+          </p>
+          <p className="truncate text-xs text-sidebar-foreground/60">
+            {conversations.length} saved
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onNewConversation}
+          disabled={loading}
+          title="New conversation"
+          aria-label="New conversation"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-100 disabled:text-emerald-300"
+        >
+          <Plus aria-hidden="true" className="size-4" />
+        </button>
+      </div>
+
+      <div className="mt-2 min-h-0 overflow-y-auto">
+        {conversations.length === 0 ? (
+          <div className="px-2 py-5 text-center text-xs leading-5 text-sidebar-foreground/60">
+            No saved conversations yet.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {conversations.map((conversation) => {
+              const active = conversation.id === activeConversationId;
+              return (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => onOpenConversation(conversation)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    onOpenMenu(
+                      conversation.id,
+                      event.clientX,
+                      event.clientY
+                    );
+                  }}
+                  disabled={loading}
+                  className={`group grid w-full grid-cols-[auto_1fr] gap-2 rounded-md px-2 py-2 text-left transition-colors ${
+                    active
+                      ? "bg-emerald-50 text-emerald-900"
+                      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  <span
+                    className={`mt-0.5 inline-flex size-7 items-center justify-center rounded-md ${
+                      active
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-sidebar-accent text-sidebar-foreground/70"
+                    }`}
+                  >
+                    <MessageSquare aria-hidden="true" className="size-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">
+                      {conversation.title || "New conversation"}
+                    </span>
+                    <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-sidebar-foreground/60">
+                      <span className="truncate">{conversation.mode}</span>
+                      <span aria-hidden="true">/</span>
+                      <span className="shrink-0">
+                        {formatConversationTime(conversation.updatedAt)}
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -655,6 +882,13 @@ function ChatComposer({
         mode: "openai" as const,
         label: "OpenAI",
         hint: CHAT_MODE_OPTIONS[2].hint,
+      },
+      {
+        key: "mode:skill-agent",
+        type: "mode" as const,
+        mode: "skill-agent" as const,
+        label: "Skill Agent",
+        hint: "Create API Skill",
       },
       ...agents.map((agent) => ({
         key: `agent:${agent.id}`,
@@ -1110,6 +1344,33 @@ function summarizeCitationContent(content: string) {
   }
 
   return normalized.length > 180 ? `${normalized.slice(0, 180)}...` : normalized;
+}
+
+function toClientChatMode(mode: string, agentId: string | null): ChatMode {
+  if (agentId || mode === "agent") return "agent";
+  if (mode === "skill-agent") return "skill-agent";
+  if (mode === "openai") return "openai";
+  return "knowledge-agent";
+}
+
+function formatConversationTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+
+  if (sameDay) {
+    return date.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 async function readSseStream(
