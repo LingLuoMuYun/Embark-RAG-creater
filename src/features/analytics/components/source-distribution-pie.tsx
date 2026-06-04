@@ -11,9 +11,9 @@ const COLORS = [
   "#22c55e",
   "#f59e0b",
   "#f97316",
-  "#ef4444",
-  "#8b5cf6",
 ];
+const MAX_SOURCE_ITEMS = 6;
+const SOURCE_LEGEND_HEIGHT = 420;
 
 function formatPercent(value: number, total: number): string {
   if (total === 0) return "0%";
@@ -21,10 +21,11 @@ function formatPercent(value: number, total: number): string {
 }
 
 export function SourceDistributionPie({ items }: SourceDistributionPieProps) {
-  const total = items.reduce((sum, item) => sum + item.count, 0);
+  const displayItems = items.slice(0, MAX_SOURCE_ITEMS);
+  const total = displayItems.reduce((sum, item) => sum + item.count, 0);
 
   let offset = 0;
-  const stops = items.map((item, index) => {
+  const stops = displayItems.map((item, index) => {
     const percentage = total === 0 ? 0 : (item.count / total) * 100;
     const start = offset;
     const end = offset + percentage;
@@ -33,7 +34,7 @@ export function SourceDistributionPie({ items }: SourceDistributionPieProps) {
   });
 
   return (
-    <section className="h-full rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <section className="h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-zinc-950">素材来源占比</h2>
@@ -44,7 +45,7 @@ export function SourceDistributionPie({ items }: SourceDistributionPieProps) {
         </div>
       </div>
 
-      {items.length === 0 ? (
+      {displayItems.length === 0 ? (
         <p className="py-16 text-center text-sm text-zinc-400">暂无素材来源数据</p>
       ) : (
         <div className="mt-5 grid gap-6 xl:grid-cols-[240px_minmax(0,1fr)]">
@@ -71,8 +72,14 @@ export function SourceDistributionPie({ items }: SourceDistributionPieProps) {
             </div>
           </div>
 
-          <div className="space-y-3">
-            {items.map((item, index) => (
+          <div
+            className="space-y-3 overflow-hidden"
+            style={{
+              height: SOURCE_LEGEND_HEIGHT,
+              maxHeight: SOURCE_LEGEND_HEIGHT,
+            }}
+          >
+            {displayItems.map((item, index) => (
               <div
                 key={item.sourceType}
                 className="rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3"

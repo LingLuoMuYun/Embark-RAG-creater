@@ -27,7 +27,7 @@ export default async function DashboardPage() {
     title: item.title,
     meta: `${item.hitCount.toLocaleString("zh-CN")} 次命中`,
   }));
-  const knowledgeGapItems = overview.knowledgeGaps.map((item) => ({
+  const knowledgeGapItems = overview.knowledgeGaps.slice(0, 3).map((item) => ({
     id: item.query,
     title: item.query,
     meta: `${item.count.toLocaleString("zh-CN")} 次未命中`,
@@ -62,15 +62,19 @@ export default async function DashboardPage() {
           />
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+        <div className="mt-6 grid items-start gap-6 lg:h-[560px] lg:grid-cols-[1.35fr_1fr] lg:items-stretch">
           <SourceDistributionPie items={overview.sourceDistribution} />
-          <div className="grid gap-6">
+          <div className="grid gap-6 lg:h-full lg:grid-rows-[minmax(0,1fr)_auto]">
             <PlaceholderPanel
               title="知识缺口"
               emptyText="暂无知识缺口数据"
               items={knowledgeGapItems}
+              className="lg:h-full lg:overflow-hidden"
             />
-            <PendingWorkloadCard workload={overview.pendingWorkload} />
+            <PendingWorkloadCard
+              workload={overview.pendingWorkload}
+              className="lg:overflow-hidden"
+            />
           </div>
         </div>
       </div>
