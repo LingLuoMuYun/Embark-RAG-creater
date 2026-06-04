@@ -1,5 +1,5 @@
-import type { ChatRole } from "@/features/agent/agent-chat.types";
-import type { LlmInterfaceKey } from "@/features/agent/agent-chat.validation";
+import type { ChatRole } from "@/features/chat/chat.types";
+import type { LlmInterfaceKey } from "@/features/chat/chat.validation";
 
 export type LlmMessage = {
   role: ChatRole;

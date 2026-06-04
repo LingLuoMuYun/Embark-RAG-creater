@@ -1,13 +1,59 @@
 import type {
   ChatCitation,
+  ChatConversationDTO,
   ChatKnowledgeFile,
   ChatMessageDTO,
-} from "@/features/agent/agent-chat.types";
+} from "@/features/chat/chat.types";
 import { prisma } from "@/lib/db";
 import type { LlmMessage } from "@/server/services/agent/llm-client";
 import type { KnowledgeFile } from "@/server/services/knowledge-agent-document.service";
 
 const RECENT_CHAT_MESSAGE_LIMIT = 8;
+
+export async function listChatConversations(options?: {
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  items: ChatConversationDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+}> {
+  const page = options?.page ?? 1;
+  const pageSize = options?.pageSize ?? 50;
+  const where = { status: "active" };
+
+  const [items, total] = await Promise.all([
+    prisma.chatConversation.findMany({
+      where,
+      orderBy: { updatedAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        _count: {
+          select: { messages: true },
+        },
+      },
+    }),
+    prisma.chatConversation.count({ where }),
+  ]);
+
+  return {
+    items: items.map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      mode: conversation.mode,
+      agentId: conversation.agentId,
+      status: conversation.status,
+      messageCount: conversation._count.messages,
+      createdAt: conversation.createdAt.toISOString(),
+      updatedAt: conversation.updatedAt.toISOString(),
+    })),
+    total,
+    page,
+    pageSize,
+  };
+}
 
 export async function getOrCreateChatConversation(input: {
   conversationId?: string;
@@ -37,10 +83,10 @@ export async function listChatConversationMessages(
 ): Promise<ChatMessageDTO[] | null> {
   const conversation = await prisma.chatConversation.findUnique({
     where: { id: conversationId },
-    select: { id: true },
+    select: { id: true, status: true },
   });
 
-  if (!conversation) return null;
+  if (!conversation || conversation.status !== "active") return null;
 
   const messages = await prisma.chatMessage.findMany({
     where: { conversationId },
@@ -59,6 +105,27 @@ export async function listChatConversationMessages(
   }));
 }
 
+export async function deleteChatConversation(
+  conversationId: string
+): Promise<boolean> {
+  const conversation = await prisma.chatConversation.findUnique({
+    where: { id: conversationId },
+    select: { id: true },
+  });
+
+  if (!conversation) return false;
+
+  await prisma.chatConversation.update({
+    where: { id: conversationId },
+    data: {
+      status: "deleted",
+      updatedAt: new Date(),
+    },
+  });
+
+  return true;
+}
+
 export async function listRecentChatLlmMessages(
   conversationId: string
 ): Promise<LlmMessage[]> {
@@ -68,12 +135,10 @@ export async function listRecentChatLlmMessages(
     take: RECENT_CHAT_MESSAGE_LIMIT,
   });
 
-  return messages
-    .reverse()
-    .map((message) => ({
-      role: message.role === "user" ? "user" : "assistant",
-      content: message.content,
-    }));
+  return messages.reverse().map((message) => ({
+    role: message.role === "user" ? "user" : "assistant",
+    content: message.content,
+  }));
 }
 
 export async function persistChatExchange(input: {
@@ -137,7 +202,7 @@ export function mergeRecentMessages(
 
 function createConversationTitle(message: string) {
   const normalized = message.replace(/\s+/g, " ").trim();
-  if (!normalized) return "新对话";
+  if (!normalized) return "New conversation";
   return normalized.length > 24 ? `${normalized.slice(0, 24)}...` : normalized;
 }
 

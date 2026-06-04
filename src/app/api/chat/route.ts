@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { directChatRequestSchema } from "@/features/agent/agent-chat.validation";
-import type { ChatCitation } from "@/features/agent/agent-chat.types";
+import { directChatRequestSchema } from "@/features/chat/chat.validation";
+import type { ChatCitation } from "@/features/chat/chat.types";
 import type { RagRetrieveResponse, RagRetrieveScope } from "@/features/rag/types";
 import { prisma } from "@/lib/db";
 import { buildAttachmentPromptContext } from "@/server/services/chat-attachment.service";
@@ -29,6 +29,8 @@ import {
   type LlmMessage,
 } from "@/server/services/agent/llm-client";
 import { createUsageLog } from "@/server/services/analytics.service";
+import { createSkill } from "@/server/services/skill/skill.service";
+import { skillCreateSchema } from "@/features/skill/skill.validation";
 
 const encoder = new TextEncoder();
 
@@ -113,6 +115,23 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        if (parsed.data.chatMode === "skill-agent") {
+          const result = await streamSkillAgentChat(
+            parsed.data,
+            send,
+            recentMessages,
+            request.signal
+          );
+          await persistChatExchange({
+            conversationId: conversation.id,
+            userMessage: parsed.data.message,
+            assistantMessage: result.answer,
+            citations: [],
+          });
+          send("done", { ok: true });
+          return;
+        }
+
         const prepared = await prepareDirectChat(
           parsed.data,
           request.nextUrl.origin,
@@ -188,7 +207,7 @@ async function prepareDirectChat(
   input: {
     message: string;
     agentId?: string;
-    chatMode: "openai" | "agent" | "knowledge-agent" | "rag-openai";
+    chatMode: "openai" | "agent" | "knowledge-agent" | "skill-agent" | "rag-openai";
     attachmentIds?: string[];
   },
   origin: string,
@@ -348,6 +367,79 @@ async function streamKnowledgeAgentChat(
   );
 
   return { answer, knowledgeFiles };
+}
+
+async function streamSkillAgentChat(
+  input: {
+    message: string;
+    attachmentIds?: string[];
+    llmInterface?: "default" | "openai" | "local";
+  },
+  send: (event: string, data: unknown) => void,
+  recentMessages: LlmMessage[],
+  signal?: AbortSignal
+): Promise<{ answer: string }> {
+  send("rag-summary", {
+    status: "not-applicable",
+    citationCount: 0,
+  } satisfies RagSummary);
+  send("citations", []);
+
+  if (isSkillSaveConfirmation(input.message)) {
+    const draft = parseLatestSkillDraft(recentMessages);
+    if (!draft) {
+      const answer =
+        "I did not find a valid Skill draft in the recent conversation. Please ask me to generate a Skill draft first, then reply with confirm/save.";
+      send("token", answer);
+      return { answer };
+    }
+
+    const parsed = skillCreateSchema.safeParse(draft);
+    if (!parsed.success) {
+      const answer = `The Skill draft is not ready to save: ${parsed.error.issues[0].message}. Please ask me to revise the draft and include a valid knowledgeScope.`;
+      send("token", answer);
+      return { answer };
+    }
+
+    const skill = await createSkill(parsed.data);
+    const answer = `Skill draft saved.
+
+Name: ${skill.name}
+Slug: ${skill.slug}
+Status: ${skill.status}
+
+Next steps:
+1. Test it with POST /api/skills/${skill.id}/test
+2. Publish it with POST /api/skills/${skill.id}/publish
+3. After publishing, external platforms can read /api/public/skills/${skill.slug}/manifest and call /api/public/skills/${skill.slug}/run with the one-time Bearer API key returned by publish.`;
+    send("token", answer);
+    return { answer };
+  }
+
+  const attachmentContext = await buildAttachmentPromptContext(
+    input.attachmentIds
+  );
+  const knowledgeBases = await listActiveKnowledgeBasesForSkillAgent();
+  const messages = mergeRecentMessages(
+    buildSkillAgentMessages({
+      userMessage: input.message,
+      attachmentContext,
+      knowledgeBases,
+    }),
+    recentMessages
+  );
+
+  send("status", { status: "generating" } satisfies {
+    status: ChatStreamStatus;
+  });
+  const answer = await streamChatCompletion(
+    messages,
+    (token) => send("token", token),
+    input.llmInterface ?? "openai",
+    { signal }
+  );
+
+  return { answer };
 }
 
 async function getActiveAgent(agentId?: string) {
@@ -611,6 +703,83 @@ ${renderAttachmentInstruction(input.attachmentContext)}`,
   ];
 }
 
+function buildSkillAgentMessages(input: {
+  userMessage: string;
+  attachmentContext: string;
+  knowledgeBases: string;
+}): LlmMessage[] {
+  return [
+    {
+      role: "system",
+      content: `You are Skill Agent, an assistant that produces reusable API Skills from this knowledge-base platform.
+
+Follow a skill-creator style workflow:
+1. Understand concrete examples first. Ask for 1-3 example user requests, caller platform, success criteria, expected input, expected output, and failure behavior.
+2. Plan reusable contents. Decide whether this Skill needs only an API manifest, or also Agent Skill Package resources such as references, scripts, or assets.
+3. Keep the core Skill concise. Do not stuff all knowledge into the prompt; bind explicit knowledgeBaseIds and rely on RAG at runtime.
+4. Set the right degree of freedom. Use schema and runtime rules for fragile API behavior; leave wording flexible when multiple answers are valid.
+5. Validate before save. Ensure slug naming, knowledge scope, input schema, output schema, trigger examples, and system prompt are clear.
+6. Include a machine-readable draft between <skill_draft> and </skill_draft>. The JSON must match the internal create Skill API.
+7. Tell the user to reply "confirm" or "save" only after they have reviewed the draft. Do not claim the Skill is saved until the user confirms.
+
+When information is missing, ask targeted questions instead of inventing production details.
+Never default to all knowledge bases. Ask the user to choose one or more knowledgeBaseIds from the list.
+
+Available active knowledge bases:
+${input.knowledgeBases}
+
+The draft JSON shape:
+{
+  "name": "Human readable Skill name",
+  "slug": "lowercase-kebab-slug",
+  "description": "What this API Skill does",
+  "type": "rag_agent",
+  "status": "draft",
+  "knowledgeScope": {
+    "mode": "knowledgeBases",
+    "knowledgeBaseIds": ["selected knowledge base id"],
+    "categoryIds": [],
+    "tagIds": [],
+    "knowledgeIds": [],
+    "chunkTypes": []
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "question": { "type": "string" }
+    },
+    "required": ["question"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "answer": { "type": "string" },
+      "citations": { "type": "array" }
+    }
+  },
+  "config": {
+    "triggerExamples": ["Example request that should use this Skill"],
+    "callerPlatforms": ["External platform or agent that will call it"],
+    "packageResources": {
+      "references": ["api.md", "knowledge-scope.md"],
+      "scripts": [],
+      "assets": []
+    }
+  },
+  "systemPrompt": "Runtime instruction for the Skill",
+  "version": "0.1.0"
+}
+
+Attachment context:
+${renderAttachmentInstruction(input.attachmentContext)}`,
+    },
+    {
+      role: "user",
+      content: input.userMessage,
+    },
+  ];
+}
+
 function buildRagOnlyMessages(
   userMessage: string,
   retrieve: RagRetrieveResponse,
@@ -702,4 +871,61 @@ function parseRetrieveFilesAction(text: string): KnowledgeDocumentToolInput | nu
   } catch {
     return null;
   }
+}
+
+function isSkillSaveConfirmation(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return [
+    "confirm",
+    "save",
+    "create",
+    "确认",
+    "保存",
+    "创建",
+    "确认保存",
+    "确认创建",
+  ].some((keyword) => normalized.includes(keyword));
+}
+
+function parseLatestSkillDraft(messages: LlmMessage[]): unknown | null {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== "assistant") continue;
+    const match = message.content.match(
+      /<skill_draft>\s*([\s\S]*?)\s*<\/skill_draft>/i
+    );
+    if (!match) continue;
+
+    try {
+      return JSON.parse(match[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function listActiveKnowledgeBasesForSkillAgent() {
+  const knowledgeBases = await prisma.knowledgeBase.findMany({
+    where: { status: "active" },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+    },
+  });
+
+  if (knowledgeBases.length === 0) {
+    return "No active knowledge bases are available. Ask the user to create or enable a knowledge base before saving a Skill.";
+  }
+
+  return knowledgeBases
+    .map(
+      (item) =>
+        `- id: ${item.id}; name: ${item.name}; description: ${
+          item.description || "None"
+        }`
+    )
+    .join("\n");
 }
