@@ -719,7 +719,7 @@ export async function getAnalyticsOverview() {
       },
     }),
     getHotKnowledge(5),
-    getKnowledgeGaps(5),
+    getKnowledgeGaps(3),
     // Pending knowledge: pending knowledge-type DocumentChunk rows.
     prisma.documentChunk.count({
       where: {

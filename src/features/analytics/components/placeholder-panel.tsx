@@ -8,15 +8,19 @@ type PlaceholderPanelProps = {
   title: string;
   emptyText: string;
   items: AnalyticsListItem[];
+  className?: string;
 };
 
 export function PlaceholderPanel({
   title,
   emptyText,
   items,
+  className = "",
 }: PlaceholderPanelProps) {
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <section
+      className={`rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm ${className}`}
+    >
       <h2 className="text-base font-semibold text-zinc-950">{title}</h2>
       {items.length === 0 ? (
         <p className="py-8 text-center text-sm text-zinc-400">{emptyText}</p>

@@ -19,7 +19,7 @@ export function AdminShell({ children, sidebarContent }: AdminShellProps) {
   const title = getAdminPageTitle(pathname);
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <AdminSidebar
         pathname={pathname}
         sidebarContent={sidebarContent}
