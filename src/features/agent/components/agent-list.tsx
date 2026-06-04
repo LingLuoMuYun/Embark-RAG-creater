@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AgentKnowledgeScope,
-  AgentKnowledgeScopeMode,
 } from "@/features/agent/agent.types";
 
 type AgentItem = {
@@ -83,14 +82,6 @@ const STYLE_LABELS: Record<string, string> = {
   support: "客服",
 };
 
-const SCOPE_MODE_LABELS: Record<AgentKnowledgeScopeMode, string> = {
-  all: "全部范围",
-  knowledgeBases: "指定知识库",
-  categories: "指定分类",
-  tags: "指定标签",
-  knowledgeItems: "指定知识",
-};
-
 const AGENT_LIST_REQUEST_TIMEOUT_MS = 15_000;
 
 function formatDate(dateStr: string): string {
@@ -118,11 +109,8 @@ function formatCount(label: string, count: number): string | null {
 
 function formatScopeSummary(scope: AgentKnowledgeScope): string {
   const parts = [
-    SCOPE_MODE_LABELS[scope.mode] ?? scope.mode,
+    "指定知识库",
     formatCount("知识库", scope.knowledgeBaseIds.length),
-    formatCount("分类", scope.categoryIds.length),
-    formatCount("标签", scope.tagIds.length),
-    formatCount("知识", scope.knowledgeIds.length),
   ].filter(Boolean);
 
   return parts.join(" / ");

@@ -4,7 +4,6 @@ import { type ReactNode, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { buildAgentSystemPrompt } from "@/features/agent/agent-prompt";
-import { KnowledgeCategoryScopeSelect } from "@/features/agent/components/knowledge-category-scope-select";
 import { KnowledgeBaseScopeSelect } from "@/features/agent/components/knowledge-base-scope-select";
 import {
   DEFAULT_AGENT_KNOWLEDGE_SCOPE,
@@ -100,15 +99,9 @@ function createDefaultValues(
       knowledgeBaseIds:
         initialValues?.knowledgeScope?.knowledgeBaseIds ??
         DEFAULT_AGENT_KNOWLEDGE_SCOPE.knowledgeBaseIds,
-      categoryIds:
-        initialValues?.knowledgeScope?.categoryIds ??
-        DEFAULT_AGENT_KNOWLEDGE_SCOPE.categoryIds,
-      tagIds:
-        initialValues?.knowledgeScope?.tagIds ??
-        DEFAULT_AGENT_KNOWLEDGE_SCOPE.tagIds,
-      knowledgeIds:
-        initialValues?.knowledgeScope?.knowledgeIds ??
-        DEFAULT_AGENT_KNOWLEDGE_SCOPE.knowledgeIds,
+      categoryIds: [],
+      tagIds: [],
+      knowledgeIds: [],
       chunkTypes: [],
     },
     showReferences: initialValues?.showReferences ?? true,
@@ -134,14 +127,6 @@ function buildLocalReadiness(values: AgentFormValues): ReadinessCheck[] {
       detail: hasKnowledgeBase
         ? `已绑定 ${scope.knowledgeBaseIds.length} 个知识库`
         : "RAG scope 至少需要一个知识库 ID",
-    },
-    {
-      label: "分类约束",
-      status: scope.categoryIds.length > 0 ? "pass" : "info",
-      detail:
-        scope.categoryIds.length > 0
-          ? `已限定 ${scope.categoryIds.length} 个分类`
-          : "不限定分类",
     },
     {
       label: "发布状态",
@@ -206,18 +191,6 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
     }));
   };
 
-  const handleCategoryValuesChange = (nextValues: string[]) => {
-    setNotice(null);
-    setAvailability(null);
-    setValues((current) => ({
-      ...current,
-      knowledgeScope: {
-        ...current.knowledgeScope,
-        categoryIds: nextValues,
-      },
-    }));
-  };
-
   const handleValidate = async () => {
     setError(null);
     setNotice(null);
@@ -252,6 +225,9 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
       description: values.description?.trim() || undefined,
       knowledgeScope: {
         ...values.knowledgeScope,
+        categoryIds: [],
+        tagIds: [],
+        knowledgeIds: [],
         chunkTypes: [],
       },
       systemPrompt: previewPrompt,
@@ -299,11 +275,6 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
             label="知识库"
             value={values.knowledgeScope.knowledgeBaseIds.length}
             detail="检索边界"
-          />
-          <SummaryMetric
-            label="分类"
-            value={values.knowledgeScope.categoryIds.length}
-            detail="可选约束"
           />
         </div>
 
@@ -359,17 +330,12 @@ export function AgentForm({ mode, agentId, initialValues }: AgentFormProps) {
         <FormSection
           index="02"
           title="知识边界"
-          description="先绑定知识库，再按全局分类做可选收窄；标签和指定知识暂不开放配置。"
+          description="当前只绑定知识库作为检索边界；知识条目、AI 标签和 AI 类别暂不开放配置。"
         >
           <div className="space-y-5">
             <KnowledgeBaseScopeSelect
               value={values.knowledgeScope.knowledgeBaseIds}
               onChange={handleKnowledgeBaseIdsChange}
-            />
-
-            <KnowledgeCategoryScopeSelect
-              value={values.knowledgeScope.categoryIds}
-              onChange={handleCategoryValuesChange}
             />
           </div>
         </FormSection>
