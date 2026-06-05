@@ -21,14 +21,19 @@ import {
 import { KnowledgeSearchBox, SearchHighlight } from "@/features/knowledge";
 import {
   bindKnowledgeBaseDocuments,
+  fetchDocumentChunks,
   fetchKnowledgeSourceDocuments,
   fetchRagDetail,
   unbindKnowledgeBaseDocuments,
 } from "@/features/knowledge-bases/api";
 import type { RagChunk, RagDoc } from "@/features/knowledge-bases/types";
-import { normalizeRagDoc } from "@/features/knowledge-bases/utils";
+import {
+  normalizeRagChunk,
+  normalizeRagDoc,
+} from "@/features/knowledge-bases/utils";
 
 import { DocumentAssignmentPanel } from "./document-assignment-panel";
+import { DocumentChunksDialog } from "./document-chunks-dialog";
 import { KnowledgeItemsPanel } from "./knowledge-items-panel";
 import {
   getDefaultKnowledgeBaseDetailFilter,
@@ -240,13 +245,20 @@ export function KnowledgeBaseDetailFeature() {
   const [highlightedChunkId, setHighlightedChunkId] = React.useState<
     string | null
   >(null);
+  const [chunkDialogOpen, setChunkDialogOpen] = React.useState(false);
+  const [chunkDialogDocument, setChunkDialogDocument] =
+    React.useState<RagDoc | null>(null);
+  const [chunkDialogChunks, setChunkDialogChunks] = React.useState<RagChunk[]>(
+    []
+  );
+  const [chunkDialogLoading, setChunkDialogLoading] = React.useState(false);
+  const [chunkDialogError, setChunkDialogError] = React.useState<string | null>(
+    null
+  );
   const [detailFilter, setDetailFilter] =
     React.useState<KnowledgeBaseDetailFilterValue>(
       getDefaultKnowledgeBaseDetailFilter()
     );
-  const [expandedDocumentIds, setExpandedDocumentIds] = React.useState<
-    Set<string>
-  >(new Set());
 
   const selectedIds = React.useMemo(
     () => selectedDocuments.map((document) => document.id),
@@ -319,13 +331,21 @@ export function KnowledgeBaseDetailFeature() {
   }, [knowledgeBaseId]);
 
   React.useEffect(() => {
-    setSearchKeyword("");
-    setSubmittedSearchKeyword("");
-    setSearchResults([]);
-    setSearchError("");
-    setHighlightedChunkId(null);
-    setDetailFilter(getDefaultKnowledgeBaseDetailFilter());
-    setExpandedDocumentIds(new Set());
+    const resetTimer = window.setTimeout(() => {
+      setSearchKeyword("");
+      setSubmittedSearchKeyword("");
+      setSearchResults([]);
+      setSearchError("");
+      setHighlightedChunkId(null);
+      setDetailFilter(getDefaultKnowledgeBaseDetailFilter());
+      setChunkDialogOpen(false);
+      setChunkDialogDocument(null);
+      setChunkDialogChunks([]);
+      setChunkDialogLoading(false);
+      setChunkDialogError(null);
+    }, 0);
+
+    return () => window.clearTimeout(resetTimer);
   }, [knowledgeBaseId]);
 
   React.useEffect(() => {
@@ -402,18 +422,6 @@ export function KnowledgeBaseDetailFeature() {
     }
   }
 
-  function toggleDocumentExpanded(documentId: string) {
-    setExpandedDocumentIds((current) => {
-      const next = new Set(current);
-      if (next.has(documentId)) {
-        next.delete(documentId);
-      } else {
-        next.add(documentId);
-      }
-      return next;
-    });
-  }
-
   function handleEnableDocument(documentId: string) {
     const document = availableDocuments.find((item) => item.id === documentId);
     if (!document || saving) return;
@@ -432,39 +440,12 @@ export function KnowledgeBaseDetailFeature() {
       current.filter((item) => item.id !== documentId)
     );
     setAvailableDocuments((current) => [document, ...current]);
-    setExpandedDocumentIds((current) => {
-      const next = new Set(current);
-      next.delete(documentId);
-      return next;
-    });
   }
 
   function handleDetailFilterChange(nextFilter: KnowledgeBaseDetailFilterValue) {
     setDetailFilter(nextFilter);
     setHighlightedChunkId(null);
 
-    if (
-      nextFilter.suggestedCategory === "all" &&
-      nextFilter.suggestedTag === "all"
-    ) {
-      return;
-    }
-
-    const matchedDocumentIds = selectedDocuments
-      .filter((document) =>
-        (document.chunks ?? []).some((chunk) =>
-          chunkMatchesFilter(chunk, nextFilter)
-        )
-      )
-      .map((document) => document.id);
-
-    setExpandedDocumentIds((current) => {
-      const next = new Set(current);
-      for (const documentId of matchedDocumentIds) {
-        next.add(documentId);
-      }
-      return next;
-    });
   }
 
   async function handleSaveAssignments() {
@@ -548,20 +529,47 @@ export function KnowledgeBaseDetailFeature() {
       setDetailFilter(getDefaultKnowledgeBaseDetailFilter());
     }
 
-    setExpandedDocumentIds((current) => {
-      const next = new Set(current);
-      next.add(result.documentId);
-      return next;
-    });
-
     if (result.type === "chunk" && result.chunkId) {
       setHighlightedChunkId(result.chunkId);
-      scrollToElement(`chunk-${result.chunkId}`);
+      const document = selectedDocuments.find(
+        (item) => item.id === result.documentId
+      );
+      if (document) {
+        void handleViewChunks(document, result.chunkId);
+      }
       return;
     }
 
     setHighlightedChunkId(null);
     scrollToElement(`document-${result.documentId}`);
+  }
+
+  async function handleViewChunks(document: RagDoc, chunkId?: string) {
+    setChunkDialogDocument(document);
+    setChunkDialogOpen(true);
+    setChunkDialogError(null);
+    setHighlightedChunkId(chunkId ?? null);
+
+    if (Array.isArray(document.chunks)) {
+      setChunkDialogChunks(document.chunks);
+      setChunkDialogLoading(false);
+      return;
+    }
+
+    setChunkDialogChunks([]);
+    setChunkDialogLoading(true);
+
+    try {
+      const input = await fetchDocumentChunks({ documentId: document.id });
+      const chunks = Array.isArray(input) ? input.map(normalizeRagChunk) : [];
+      setChunkDialogChunks(chunks);
+    } catch (caught) {
+      setChunkDialogError(
+        caught instanceof Error ? caught.message : "分片加载失败"
+      );
+    } finally {
+      setChunkDialogLoading(false);
+    }
   }
 
   function scrollToElement(id: string) {
@@ -771,27 +779,36 @@ export function KnowledgeBaseDetailFeature() {
 
           {/* 文档管理面板 */}
           {activeTab === "documents" && (
-            <DocumentAssignmentPanel
-              availableDocuments={availableDocuments}
-              dirty={dirty}
-              expandedDocumentIds={expandedDocumentIds}
-              highlightedChunkId={highlightedChunkId}
-              highlightedCategory={highlightedCategory}
-              highlightedTag={highlightedTag}
-              onEnable={handleEnableDocument}
-              onRemove={handleRemoveDocument}
-              onSave={() => void handleSaveAssignments()}
-              onToggleDocument={toggleDocumentExpanded}
-              saving={saving}
-              searchKeyword={submittedSearchKeyword}
-              selectedControls={selectedControls}
-              selectedDocuments={filteredSelectedDocuments}
-              selectedEmptyText={
-                selectedDocuments.length === 0
-                  ? "当前 RAG 暂未引用文档，可以从待选文档中启用。"
-                  : "没有符合筛选条件的已引用文档。"
-              }
-            />
+            <>
+              <DocumentAssignmentPanel
+                availableDocuments={availableDocuments}
+                dirty={dirty}
+                onEnable={handleEnableDocument}
+                onRemove={handleRemoveDocument}
+                onSave={() => void handleSaveAssignments()}
+                onViewChunks={(document) => void handleViewChunks(document)}
+                saving={saving}
+                selectedControls={selectedControls}
+                selectedDocuments={filteredSelectedDocuments}
+                selectedEmptyText={
+                  selectedDocuments.length === 0
+                    ? "当前 RAG 暂未引用文档，可以从待选文档中启用。"
+                    : "没有符合筛选条件的已引用文档。"
+                }
+              />
+              <DocumentChunksDialog
+                open={chunkDialogOpen}
+                document={chunkDialogDocument}
+                chunks={chunkDialogChunks}
+                loading={chunkDialogLoading}
+                error={chunkDialogError}
+                highlightedChunkId={highlightedChunkId}
+                highlightedCategory={highlightedCategory}
+                highlightedTag={highlightedTag}
+                searchKeyword={submittedSearchKeyword}
+                onOpenChange={setChunkDialogOpen}
+              />
+            </>
           )}
         </>
       ) : null}

@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-基于 `docs/lzh/specs/spec.detail.md`，改造 `/knowledge-bases/[id]` 详情页，使其在后台布局内展示 RAG 基础信息、已引用文档、待选文档和已引用文档的 chunk 明细。
+基于 `docs/lzh/specs/spec.detail.md`，改造 `/knowledge-bases/[id]` 详情页，使其在后台布局内展示 RAG 基础信息、已引用文档、待选文档，并通过弹窗查看已引用文档和待选文档的 chunk 明细。
 
 本阶段只调整 `DocumentSource` 与 `KnowledgeBase` 的归属关系，即 `KnowledgeBaseDocument` 关系；不上传文件、不解析文档、不生成 chunk、不编辑文档内容、不编辑 chunk 内容。
 
@@ -27,6 +27,7 @@ src/app/api/rag-management/documents/route.ts
 
 - `GET /api/rag-management/knowledge-bases/[id]/tree` 获取 RAG 详情树，包含已绑定文档和文档 chunks。
 - `GET /api/rag-management/documents?status=parsed&activeStatus=active` 获取可用文档列表。
+- `GET /api/rag-management/documents/[id]/chunks` 获取任意可访问文档的 chunks，可用于待选文档查看分片。
 - `POST /api/rag-management/knowledge-bases/[id]/documents` 绑定文档到知识库。
 - `DELETE /api/rag-management/knowledge-bases/[id]/documents` 从知识库解绑文档。
 - `KnowledgeBaseDocument.sortOrder` 已存在。
@@ -53,6 +54,11 @@ src/app/api/rag-management/documents/route.ts
    -> 获取所有可作为知识源的文档
 
 3. 前端用已引用文档 id 集合过滤，得到待选文档
+
+4. 用户点击任意文档“分片”时
+   -> 已引用文档优先使用 tree 中已有 chunks
+   -> 待选文档按需 GET /api/rag-management/documents/[id]/chunks
+   -> 统一使用弹窗只读展示
 ```
 
 保存：
@@ -243,6 +249,10 @@ export async function unbindKnowledgeBaseDocuments(
     body: JSON.stringify({ documentIds }),
   });
 }
+
+export async function fetchDocumentChunks(params: { documentId: string }) {
+  return fetch(`/api/rag-management/documents/${params.documentId}/chunks`);
+}
 ```
 
 实际实现继续复用现有 `readApiData`。
@@ -303,7 +313,11 @@ type DocumentAssignmentState = {
   selectedDocuments: RagDoc[];
   availableDocuments: RagDoc[];
   initialSelectedDocumentIds: string[];
-  expandedDocumentIds: Set<string>;
+  chunkDialogOpen: boolean;
+  chunkDialogDocument: RagDoc | null;
+  chunkDialogChunks: RagChunk[];
+  chunkDialogLoading: boolean;
+  chunkDialogError: string | null;
   loading: boolean;
   saving: boolean;
   dirty: boolean;
@@ -352,6 +366,7 @@ src/features/knowledge-bases/components/document-assignment-panel.tsx
 src/features/knowledge-bases/components/assignment-document-list.tsx
 src/features/knowledge-bases/components/assignment-document-item.tsx
 src/features/knowledge-bases/components/document-chunk-list.tsx
+src/features/knowledge-bases/components/document-chunks-dialog.tsx
 ```
 
 职责：
@@ -362,6 +377,8 @@ src/features/knowledge-bases/components/document-chunk-list.tsx
 - 加载 RAG 详情树。
 - 加载所有可作为知识源的文档。
 - 计算已引用和待选文档。
+- 维护 chunk 弹窗状态。
+- 处理已引用/待选文档的分片查看。
 - 维护保存、错误、loading 状态。
 - 渲染返回按钮、基础信息卡片、文档归属面板。
 
@@ -379,15 +396,23 @@ src/features/knowledge-bases/components/document-chunk-list.tsx
 `AssignmentDocumentItem`
 
 - 展示文档元信息。
+- 已引用文档和待选文档均展示“分片”按钮。
 - 已引用文档展示“撤下”按钮。
 - 待选文档展示“启用”按钮。
-- 已引用文档支持展开/收起 chunk 明细。
+- 点击“分片”只触发弹窗查看，不改变文档归属。
 
 `DocumentChunkList`
 
 - 只读展示 chunks。
 - 支持空态。
 - 不提供编辑、删除、新增入口。
+
+`DocumentChunksDialog`
+
+- 接收当前文档和 chunks。
+- 以弹窗形式展示 chunk 明细。
+- 展示加载状态、错误状态和空状态。
+- 关闭弹窗不改变文档归属状态。
 
 ## 8. 数据流
 
@@ -464,7 +489,36 @@ const availableDocuments = allSourceDocuments.filter(
 - 显示错误提示。
 - `saving` 回到 false。
 
-### 8.5 离开页面
+### 8.5 查看分片
+
+已引用文档：
+
+```text
+点击“分片”
+-> 从 selectedDocuments 中读取当前 document.chunks
+-> 写入 chunkDialogDocument / chunkDialogChunks
+-> 打开 DocumentChunksDialog
+```
+
+待选文档：
+
+```text
+点击“分片”
+-> 打开 DocumentChunksDialog
+-> chunkDialogLoading = true
+-> GET /api/rag-management/documents/[id]/chunks
+-> 写入 chunkDialogChunks
+-> chunkDialogLoading = false
+```
+
+失败处理：
+
+- 弹窗保持打开。
+- 显示错误提示。
+- 不改变 `selectedDocuments`、`availableDocuments`。
+- 不改变 dirty 状态。
+
+### 8.6 离开页面
 
 本阶段不强制实现可靠自动保存。
 
@@ -476,19 +530,29 @@ const availableDocuments = allSourceDocuments.filter(
 
 ## 9. Chunk 明细展示
 
-已引用文档的 chunks 来自 RAG 详情树：
+已引用文档和待选文档都可以查看 chunk 明细。
+
+已引用文档的 chunks 优先来自 RAG 详情树：
 
 ```txt
 GET /api/rag-management/knowledge-bases/[id]/tree
 ```
 
+待选文档的 chunks 在点击“分片”时按需请求：
+
+```txt
+GET /api/rag-management/documents/[id]/chunks
+```
+
 展示规则：
 
-- 仅已引用文档展示 chunk 明细。
-- 待选文档不展示 chunk 明细，避免额外请求。
-- 已引用文档默认可折叠。
-- 展开后渲染 `doc.chunks`。
-- `doc.chunks` 为空时显示“暂无分片数据”。
+- 已引用文档和待选文档条目都展示“分片”按钮。
+- 点击“分片”统一打开弹窗。
+- 不再在文档条目下方以内嵌展开形式展示 chunks。
+- chunk 弹窗为只读展示。
+- chunk 列表为空时显示“暂无分片数据”。
+- 查看待选文档 chunk 只是预览行为，不等于启用该文档。
+- 查看 chunk 不改变 dirty 状态。
 
 字段展示：
 
@@ -562,8 +626,9 @@ Card
 
 Chunk 明细：
 
-- 放在已引用文档条目下方。
-- 使用紧凑列表。
+- 使用弹窗展示。
+- 已引用文档和待选文档复用同一个弹窗。
+- 弹窗内使用紧凑列表。
 - 内容使用 `whitespace-pre-wrap`。
 - 长内容不截断主要信息，但可限制单条最大高度并允许滚动。
 
@@ -604,6 +669,9 @@ Chunk 明细：
 -> GET tree 获取 RAG 与已引用文档/chunks
 -> GET documents 获取 parsed + active 文档
 -> 前端拆分 selected/available
+-> 用户点击任意文档“分片”
+-> 已引用文档使用 tree chunks，待选文档按需 GET document chunks
+-> 弹窗只读展示 chunks
 -> 用户启用/撤下
 -> 前端计算 toAdd/toRemove
 -> 复用 POST/DELETE 绑定接口保存关系
@@ -618,6 +686,7 @@ Chunk 明细：
 - 不做拖拽，与当前阶段边界一致。
 - 不上传、不解析、不生成 chunk，与详情页只做归属调整一致。
 - chunk 明细只读展示，与“必须展示 chunk 明细但不能修改”一致。
+- 待选文档查看 chunk 不写入 `KnowledgeBaseDocument`，与“启用后保存才建立归属”的规则一致。
 - `fileType = "note"` 的知识笔记通过 `status = "parsed"` 进入待选文档，与笔记页增量开关一致。
 
 需要在计划中明确的前置事项：
@@ -643,7 +712,9 @@ npx eslint src/app/knowledge-bases src/features/knowledge-bases src/app/api/rag-
 人工验证：
 
 - 点击 RAG 卡片进入详情页，布局仍有 Sidebar 和 Header。
-- 已引用文档显示 chunk 明细。
+- 已引用文档点击“分片”后以弹窗显示 chunk 明细。
+- 待选文档点击“分片”后以弹窗显示 chunk 明细。
+- 查看 chunk 不会让页面进入 dirty 状态。
 - 待选文档只显示 `parsed + active` 文档。
 - `fileType = note` 且 `status = parsed` 的笔记出现在待选文档。
 - 点击“启用”后进入已引用列表，未保存前刷新页面不应持久化。

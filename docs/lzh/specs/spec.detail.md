@@ -12,7 +12,7 @@
 - 查看当前 RAG 已引用的文档。
 - 查看当前 RAG 尚未引用但可作为知识源的待选文档。
 - 调整文档与当前 RAG 的归属关系。
-- 展示每个已引用文档下的 chunk 明细。
+- 通过弹窗查看已引用文档和待选文档的 chunk 明细。
 
 本阶段不修改文档内容，不修改 chunk 内容，不上传文件，不解析文档，不生成 chunk，不生成 embedding。
 
@@ -29,7 +29,8 @@
 - “撤下”已引用文档，将其从当前 RAG 移除。
 - 手动保存文档归属关系。
 - 保存失败时保留当前前端编排状态。
-- 已引用文档下方展示 chunk 明细。
+- 已引用文档和待选文档均可查看 chunk 明细。
+- chunk 明细以弹窗形式展示，不以内嵌展开形式展示。
 
 本阶段不实现：
 
@@ -117,9 +118,11 @@ note: 用户在知识笔记页面创建的 Markdown 笔记
 
 ### 4.4 Chunk 展示数据
 
-已引用文档需要展示 chunk 明细。chunk 只读展示，不允许编辑。
+已引用文档和待选文档都需要支持查看 chunk 明细。chunk 只读展示，不允许编辑。
 
-建议返回或复用现有详情接口中的字段：
+已引用文档的 chunk 可以来自 RAG 详情 tree。待选文档的 chunk 可以在用户点击“分片”时按 documentId 请求。
+
+建议复用以下字段：
 
 ```ts
 type DetailChunk = {
@@ -156,9 +159,9 @@ RAG 基础信息卡片
 文档归属管理区
   已引用文档
     文档条目
-    chunk 明细
   待选文档
     文档条目
+  Chunk 查看弹窗
 ```
 
 页面仍然处于 `AdminShell` 的 Main Content 内。
@@ -183,17 +186,20 @@ RAG 基础信息卡片
 已引用文档操作按钮：
 
 ```text
+分片
 撤下
 ```
 
 待选文档操作按钮：
 
 ```text
+分片
 启用
 ```
 
 交互规则：
 
+- 点击“分片”打开 chunk 查看弹窗，不改变文档归属，不触发 dirty 状态。
 - 点击“撤下”只更新前端编排状态，不立即请求后端。
 - 点击“启用”只更新前端编排状态，不立即请求后端。
 - 同一个文档不能同时出现在已引用和待选两侧。
@@ -202,14 +208,16 @@ RAG 基础信息卡片
 
 ## 7. Chunk 明细展示
 
-已引用文档必须支持展示 chunk 明细。
+已引用文档和待选文档都必须支持查看 chunk 明细。
 
 展示方式：
 
-- 每个已引用文档条目下方展示 chunk 区域。
-- 可以默认折叠，点击文档条目或“展开”按钮后展开。
-- 展开后展示该文档的所有 chunk。
-- 如果该文档没有 chunk，显示空态文案：
+- 文档条目中提供“分片”按钮。
+- 点击“分片”后打开弹窗展示该文档的所有 chunk。
+- 已引用文档优先使用详情 tree 中已经返回的 `document.chunks`。
+- 待选文档点击“分片”时，按需请求该文档的 chunks。
+- 弹窗关闭后不影响已引用/待选列表，也不改变 dirty 状态。
+- 如果该文档没有 chunk，弹窗显示空态文案：
 
 ```text
 暂无分片数据
@@ -222,6 +230,7 @@ RAG 基础信息卡片
 - 不允许删除 chunk。
 - 不允许重新切分。
 - 不允许在本页触发 embedding。
+- 查看待选文档 chunk 不等于启用该文档，只有点击“启用”并保存后才会写入 `KnowledgeBaseDocument`。
 
 ## 8. 保存机制
 
@@ -263,6 +272,7 @@ RAG 基础信息卡片
 ```text
 POST /api/knowledge-bases/[id]/documents
 DELETE /api/knowledge-bases/[id]/documents
+GET /api/rag-management/documents/[id]/chunks
 ```
 
 如果现有接口无法表达“保存当前最终集合”，可以在服务层新增一个“保存最终集合”的函数，但实现应复用现有绑定、解绑、校验和事务逻辑，避免重复业务规则。
@@ -306,6 +316,11 @@ type ComposeState = {
   selectedDocuments: ComposeDocument[];
   availableDocuments: ComposeDocument[];
   initialSelectedDocumentIds: string[];
+  chunkDialogOpen: boolean;
+  chunkDialogDocument: ComposeDocument | null;
+  chunkDialogChunks: DetailChunk[];
+  chunkDialogLoading: boolean;
+  chunkDialogError: string | null;
   loading: boolean;
   saving: boolean;
   dirty: boolean;
@@ -320,6 +335,8 @@ selectedDocuments.map((doc) => doc.id)
 ```
 
 与 `initialSelectedDocumentIds` 不一致时，视为 dirty。
+
+chunk 弹窗状态只服务查看行为，不参与 dirty 判断。
 
 ## 11. 与知识笔记的关系
 
@@ -363,7 +380,10 @@ status = "parsed"
 18. 本页不允许编辑文档内容。
 19. 本页不允许编辑 chunk 内容。
 20. 已引用文档可以展示 chunk 明细。
-21. chunk 明细为只读展示。
-22. 本阶段不实现拖拽。
-23. 不破坏知识文档管理页的上传能力。
-24. 不破坏知识笔记页面。
+21. 待选文档可以展示 chunk 明细。
+22. chunk 明细以弹窗形式展示，不以内嵌展开形式展示。
+23. 查看 chunk 不会改变 dirty 状态。
+24. chunk 明细为只读展示。
+25. 本阶段不实现拖拽。
+26. 不破坏知识文档管理页的上传能力。
+27. 不破坏知识笔记页面。

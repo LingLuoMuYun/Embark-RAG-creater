@@ -1,15 +1,12 @@
 "use client";
 
-import * as React from "react";
-import { ChevronDown, ChevronRight, FileText } from "lucide-react";
+import { FileText, ListTree } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { RagDoc } from "@/features/knowledge-bases/types";
 import { formatFileSize } from "@/features/knowledge-bases/utils";
 import { getSourceTypeLabel } from "@/lib/source-type";
-
-import { DocumentChunkList } from "./document-chunk-list";
 
 function formatDate(value?: string) {
   if (!value || value === "--") return "--";
@@ -21,40 +18,16 @@ function formatDate(value?: string) {
 type AssignmentDocumentItemProps = {
   document: RagDoc;
   kind: "selected" | "available";
-  expanded?: boolean;
-  highlightedChunkId?: string | null;
-  highlightedCategory?: string;
-  highlightedTag?: string;
-  searchKeyword?: string;
   onMove: (documentId: string) => void;
-  onToggleExpanded?: (documentId: string) => void;
+  onViewChunks: (document: RagDoc) => void;
 };
 
 export function AssignmentDocumentItem({
   document,
   kind,
-  expanded,
-  highlightedChunkId,
-  highlightedCategory,
-  highlightedTag,
-  searchKeyword,
   onMove,
-  onToggleExpanded,
+  onViewChunks,
 }: AssignmentDocumentItemProps) {
-  const [internalExpanded, setInternalExpanded] = React.useState(false);
-  const chunks = document.chunks ?? [];
-  const canShowChunks = kind === "selected";
-  const isExpanded = expanded ?? internalExpanded;
-
-  const toggleExpanded = () => {
-    if (onToggleExpanded) {
-      onToggleExpanded(document.id);
-      return;
-    }
-
-    setInternalExpanded((current) => !current);
-  };
-
   return (
     <article id={`document-${document.id}`} className="rounded-md border bg-background p-3">
       <div className="grid gap-3 md:grid-cols-[1fr_auto]">
@@ -85,7 +58,9 @@ export function AssignmentDocumentItem({
                 </Badge>
               </div>
               <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                <span>Chunks: {document.chunkCount ?? chunks.length}</span>
+                <span>
+                  Chunks: {document.chunkCount ?? document.chunks?.length ?? 0}
+                </span>
                 <span>
                   大小: {formatFileSize(document.fileSize ?? document.size)}
                 </span>
@@ -97,21 +72,15 @@ export function AssignmentDocumentItem({
           </div>
         </div>
         <div className="flex items-center justify-end gap-2">
-          {canShowChunks ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={toggleExpanded}
-            >
-              {isExpanded ? (
-                <ChevronDown data-icon="inline-start" />
-              ) : (
-                <ChevronRight data-icon="inline-start" />
-              )}
-              分片
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onViewChunks(document)}
+          >
+            <ListTree data-icon="inline-start" />
+            分片
+          </Button>
           <Button
             type="button"
             variant={kind === "selected" ? "outline" : "default"}
@@ -122,17 +91,6 @@ export function AssignmentDocumentItem({
           </Button>
         </div>
       </div>
-      {canShowChunks && isExpanded ? (
-        <div className="mt-3 border-t pt-3">
-          <DocumentChunkList
-            chunks={chunks}
-            highlightedChunkId={highlightedChunkId}
-            highlightedCategory={highlightedCategory}
-            highlightedTag={highlightedTag}
-            searchKeyword={searchKeyword}
-          />
-        </div>
-      ) : null}
     </article>
   );
 }

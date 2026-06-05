@@ -21,15 +21,10 @@ type DocumentAssignmentPanelProps = {
   saving: boolean;
   selectedControls?: React.ReactNode;
   selectedEmptyText?: string;
-  expandedDocumentIds?: Set<string>;
-  highlightedChunkId?: string | null;
-  highlightedCategory?: string;
-  highlightedTag?: string;
-  searchKeyword?: string;
   onEnable: (documentId: string) => void;
   onRemove: (documentId: string) => void;
   onSave: () => void;
-  onToggleDocument?: (documentId: string) => void;
+  onViewChunks: (document: RagDoc) => void;
 };
 
 export function DocumentAssignmentPanel({
@@ -39,15 +34,10 @@ export function DocumentAssignmentPanel({
   saving,
   selectedControls,
   selectedEmptyText = "当前 RAG 暂未引用文档，可以从待选文档中启用。",
-  expandedDocumentIds,
-  highlightedChunkId,
-  highlightedCategory,
-  highlightedTag,
-  searchKeyword,
   onEnable,
   onRemove,
   onSave,
-  onToggleDocument,
+  onViewChunks,
 }: DocumentAssignmentPanelProps) {
   return (
     <Card>
@@ -68,14 +58,9 @@ export function DocumentAssignmentPanel({
           description="当前 RAG 会基于以下文档进行知识增强。"
           documents={selectedDocuments}
           emptyText={selectedEmptyText}
-          expandedDocumentIds={expandedDocumentIds}
-          highlightedChunkId={highlightedChunkId}
-          highlightedCategory={highlightedCategory}
-          highlightedTag={highlightedTag}
           kind="selected"
           onMove={onRemove}
-          onToggleDocument={onToggleDocument}
-          searchKeyword={searchKeyword}
+          onViewChunks={onViewChunks}
           title={`已引用文档（${selectedDocuments.length}）`}
         />
         <AssignmentDocumentList
@@ -84,6 +69,7 @@ export function DocumentAssignmentPanel({
           emptyText="暂无可选文档。"
           kind="available"
           onMove={onEnable}
+          onViewChunks={onViewChunks}
           title={`待选文档（${availableDocuments.length}）`}
         />
       </CardContent>
